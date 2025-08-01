@@ -9,7 +9,7 @@ import matlab.engine
 
 # Updated local imports with relative paths
 from ..utilities.util import read_paths, dbQuery  # Combine related imports
-from ..database_handler.connection_class import DB_PATH  # Relative import for DB_PATH
+from ..database.connection_class import DB_PATH  # Relative import for DB_PATH
 
 # Initialize the PATHS dictionary
 PATHS = read_paths()

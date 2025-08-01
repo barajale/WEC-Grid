@@ -1,4 +1,4 @@
-from .core import WECGridEngine as Engine
+from .engine import WECGridEngine as Engine
 
 __version__ = "0.1.0"
 
@@ -8,11 +8,11 @@ from .pypsa.pypsa_interface import PYPSAInterface
 
 
 from .cec.cec_class import CEC
-from .database_handler.connection_class import SQLiteConnection
+from .database.connection_class import SQLiteConnection
 from .utilities.util import dbQuery, read_paths
-from .viz.psse_viz import PSSEVisualizer
-from .viz.pypsa_viz import PyPSAVisualizer
-from .wec.wec_class import WEC
+from .plot.psse_viz import PSSEVisualizer
+from .plot.pypsa_viz import PyPSAVisualizer
+from .wec.device import WEC
 
 # # WecGrid/__init__.py
 

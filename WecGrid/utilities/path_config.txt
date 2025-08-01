@@ -1,5 +1,0 @@
-C:\Program Files\PTI\PSSE35\35.3
-C:\Users\alexb\research\WEC-Sim
-C:\Users\alexb\research\WEC-GRID\WecGrid\models\wec_models
-C:\Users\alexb\research\WEC-GRID\WecGrid\core.py
-C:\Users\alexb\research\WEC-GRID

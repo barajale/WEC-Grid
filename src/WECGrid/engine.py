@@ -27,12 +27,12 @@ import matplotlib.pyplot as plt
 
 # local libraries
 from WECGrid.cec import cec_class
-from WECGrid.wec import wec_class
+from WECGrid.wec import device
 from WECGrid.utilities.util import dbQuery, read_paths
-from WECGrid.database_handler.connection_class import DB_PATH
+from WECGrid.database.connection_class import DB_PATH
 from WECGrid.pypsa import PYPSAInterface
 from WECGrid.psse import PSSEInterface
-from WECGrid.viz import WECGridVisualizer
+from WECGrid.plot import WECGridVisualizer
 
 
 # Initialize the PATHS dictionary
@@ -172,7 +172,7 @@ class WECGridEngine:
         self.wec_buses.append(ibus)
         for i in range(farm_size):
             self.wecObj_list.append(
-                wec_class.WEC(
+                device.WEC(
                     engine=self,
                     sim_id=sim_id,
                     model=model,

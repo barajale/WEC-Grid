@@ -22,7 +22,7 @@ import time as time_module
 
 
 # Local Libraries (updated with relative imports)
-from ..viz.psse_viz import PSSEVisualizer  # Relative import for viz/psse_viz.py
+from ..plot.psse_viz import PSSEVisualizer  # Relative import for viz/psse_viz.py
 
 
 Snapshot = namedtuple("Snapshot", ["snapshot", "buses", "generators", "branches", "branch_flows", "loads", "plants", "TwoWinding", "ThreeWinding", "metadata"])   

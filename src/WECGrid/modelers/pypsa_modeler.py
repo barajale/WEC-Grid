@@ -33,7 +33,7 @@ from grg_pssedata.io import parse_psse_case_file
 
 # Local Libraries (updated with relative imports)
 #from ..utilities.util import read_paths  # Relative import for utilities/util.py
-from ..viz.pypsa_viz import PyPSAVisualizer
+from ..plot.pypsa_viz import PyPSAVisualizer
 
 # # Initialize the PATHS dictionary
 # PATHS = read_paths()
