@@ -1,55 +1,454 @@
 """
-PSS/E Modeler Class File
-
-TODO: add a description here 
+PSS®E Modeler - Barebones Implementation
 """
 
 # Standard Libraries
 import os
 import sys
 import contextlib
-
-# 3rd Party Libraries
-import pandas as pd
-import cmath
-import numpy as np
-import matplotlib.pyplot as plt
-import networkx as nx
-from collections import defaultdict
-from matplotlib.patches import Rectangle, Circle, FancyArrow
-from matplotlib.lines import Line2D
-from collections import namedtuple
-import time
-import time as time_module
-
 from typing import Any
+from datetime import datetime
+from collections import defaultdict
 
-# Local Libraries (updated with relative imports)
-# from ..plot.psse_viz import PSSEVisualizer  # Relative import for viz/psse_viz.py
+# 3rd party
+import pandas as pd
 
-
-
+# Local imports
 from .power_system_modeler import PowerSystemModeler
+from .network_state import NetworkState  # used internally
 
 
-
-
-
+@contextlib.contextmanager
+def silence_stdout():
+    new_target = open(os.devnull, 'w')
+    old_stdout = sys.stdout
+    sys.stdout = new_target
+    try:
+        yield
+    finally:
+        sys.stdout = old_stdout
+        
 class PSSEModeler(PowerSystemModeler):
     def __init__(self, case_file: str, engine: Any):
         super().__init__(case_file, engine)
-        # any PSSE‐specific initial data structures
 
-    def init_api(self) -> None:
+        # PSS®E specific internal state
+        self._i = None
+        self._f = None
+        self._s = None
+
+
+    def init_api(self) -> bool:
+        """Initialize the PSS®E environment and load the case."""
+        Debug = False  # Set to True for debugging output
+        try:
+            with silence_stdout():
+                import psspy
+                import psse35
+                import redirect
+                redirect.psse2py() 
+                psse35.set_minor(3)
+                psspy.psseinit(50)
+
+            if not Debug:
+                psspy.prompt_output(6, "", [])
+                psspy.alert_output(6, "", [])
+                psspy.progress_output(6, "", [])
+
+            PSSEModeler.psspy = psspy
+            self._i = psspy.getdefaultint()
+            self._f = psspy.getdefaultreal()
+            self._s = psspy.getdefaultchar()
+
+        except ModuleNotFoundError as e:
+            raise ImportError("PSS®E not found or not configured correctly.") from e
+
+        ext = self.case_file.lower()
+        if ext.endswith(".sav"):
+            ierr = psspy.case(self.case_file)
+        elif ext.endswith(".raw"):
+            ierr = psspy.read(1, self.case_file)
+        else:
+            print("Unsupported case file format.")
+            return False
+
+        if ierr != 0:
+            print(f"PSS®E failed to load case. ierr={ierr}")
+            return False
+    
+
+        if self.psspy.fnsl() != 0:
+            print("Powerflow solution failed.")
+            return False
+            
+        self.take_snapshot(timestamp=self.engine.timeline.start_time)
+        print("PSS®E software initialized")
+        return True
+
+    def solve_powerflow(self) -> bool:
+        """Run powerflow and update self.state."""
+        ierr = self.psspy.fnsl()
+        ival = self.psspy.solved()
+        if ierr != 0 or ival != 0:
+            print(f"[ERROR] Powerflow not solved. PSS®E error code: {ierr}, Solved Status: {ival}")
+            #TODO error handling here 
+            return False
+        return True
+        #TODO not sure if I should be calling take_snapshot here or in simulate? maybe both? 
+        
+        
+
+    def add_wec(self, model: str, from_bus: int, to_bus: int) -> bool:
+        """Inject a WEC system into the PSS®E model.
+        
+        Adds a WEC system to the PSSE model by:
+        1. Adding a new bus.
+        2. Adding a generator to the bus.
+        3. Adding a branch (line) connecting the new bus to an existing bus.
+
+        Parameters:
+        - model (str): Model identifier for the WEC system.
+        - ID (int): Unique identifier for the WEC system.
+        - ibus (int): New bus ID for the WEC system. (WEC BUS)
+        - jbus (int): Existing bus ID to connect the line from.
         """
-        Initialize PSS®E API, load RAW case, etc.
+    
+        from_bus_voltage = self.psspy.busdat(from_bus, "BASE")[1]
+
+        # Step 1: Add a new bus
+        
+        ierr = self.psspy.bus_data_4(
+            ibus=to_bus, 
+            inode=0, 
+            intgar1=2, # Bus type (2 = PV bus ), area, zone, owner
+            realar1=from_bus_voltage, # Base voltage of the from bus in kV
+            name= f"WEC BUS {to_bus}", # Name of the bus
+        )
+        if ierr > 0:
+            print(f"Error adding bus {to_bus}. PSS®E error code: {ierr}")
+            return False
+
+        # Step 2: Add plant data
+        ierr = self.psspy.plant_data_4(
+            ibus=to_bus, # add plant a wec bus 
+            inode=0
+        )
+        if ierr > 0:
+            print(f"Error adding plant data to bus {to_bus}. PSS®E error code: {ierr}")
+            return False
+
+        for i, wec_obj in enumerate(self.engine.wecObj_list):
+            # Step 3: Add a generator at the new bus
+            wec_obj.gen_id = f"W{i}"
+            wec_obj.gen_name = f"{wec_obj.gen_id}-{wec_obj.model}-{wec_obj.ID}"
+            ierr = self.psspy.machine_data_4(
+                ibus=to_bus, 
+                id= f"W{i}", # maybe should just be a number? come back
+                realar1= 0.1, # PG, machine active power (0.0 by default)
+                realar5= 3.0, # PT 30 kW
+                realar6= 0.0, #PB
+                realar7=wec_obj.MBASE # 1 MVA typically
+            )
+
+            if ierr > 0:
+                print(
+                    f"Error adding generator {wec_obj.gen_id} to bus {to_bus}. PSS®E error code: {ierr}"
+                )
+                return False
+
+        # Step 4: Add a branch (line) connecting the existing bus to the new bus
+        realar_array = [0.0] * 12
+        realar_array[0] = 0.0452  # R
+        realar_array[1] = 0.1652  # X
+        ratings_array = [0.0] * 12
+        ratings_array[0] = 130.00  # RATEA
+        ierr = self.psspy.branch_data_3(
+            ibus=to_bus, # from bus
+            jbus=from_bus,  # to bus
+            realar=realar_array,
+            namear="WEC Line"
+        )
+        if ierr > 0:
+            print(
+                f"Error adding branch from {to_bus} to {from_bus}. PSS®E error code: {ierr}"
+            )
+            return False
+
+        self.solve_powerflow()
+        self.take_snapshot(snapshot=self.engine.start_time, metadata={"step": "added wec components"})
+        return True
+    
+    
+    
+    
+
+    def simulate(self, load_curve: bool = True, plot: bool = True) -> bool:
+        """Run a time-series simulation with WEC data injection."""
+        
+        # if load_curve and self.engload_profiles.empty:
+        #     self.engine.generate_load_profiles()
+    
+        for snapshot in self.engine.snapshots: 
+            # for idx, wec_obj in enumerate(self.engine.wecObj_list):
+            #     pg = float(wec_obj.dataframe.loc[wec_obj.dataframe.snapshots == snapshot].pg)
+            #     ierr = self.psspy.machine_chng_4(
+            #         ibus=wec_obj.bus_location, 
+            #         id=wec_obj.gen_id, 
+            #         realar=[pg] + [self._f]*16) > 0
+            #     if ierr > 0: 
+            #         raise Exception(f"Error setting generator power at snapshot {snapshot}")
+            # if load_curve:
+            #     for bus in self.load_profiles.columns:
+            #         pl = float(self.load_profiles.loc[snapshot, bus])
+            #         ierr = self.psspy.load_data_6(
+            #             ibus=bus, 
+            #             realar=[pl] + [self._f]*7)
+            #     if ierr > 0:
+            #         raise Exception(f"Error setting load at bus {bus} on snapshot {snapshot}")
+            if self.solve_powerflow():
+                self.take_snapshot(timestamp=snapshot)
+            else:
+                raise Exception(f"Powerflow failed at snapshot {snapshot}")
+        return True 
+    
+    
+    def take_snapshot(self, timestamp: datetime) -> None:
         """
-        # e.g.
-        # import psspy
-        # psspy.psseinit(...)
-        # psspy.case(self.case_file)
-        # store whatever handles you need on self
-        pass
+            TODO fill in later
+        """
+
+        # --- Update current snapshot ---
+        self.state.bus    = self.snapshot_Buses()
+        self.state.gen    = self.snapshot_Generators()
+        self.state.branch = self.snapshot_Branches()
+        self.state.load   = self.snapshot_Loads()
+
+        # --- Append time-series for each component ---
+        self.state.append_snapshot("bus",    timestamp, self.state.bus)
+        self.state.append_snapshot("gen",    timestamp, self.state.gen)
+        self.state.append_snapshot("branch", timestamp, self.state.branch)
+        self.state.append_snapshot("load",   timestamp, self.state.load)
+
+
+   
+    def snapshot_Buses(self) -> pd.DataFrame:
+        """
+        Snapshot of all buses, capturing voltage, angle, shunt, mismatch, and net P/Q.
+        Includes total generation and load per bus.
+        """
+        # --- Character data: bus names
+        ierr1, carray = self.psspy.abuschar(string=["NAME"])
+        bus_names = carray[0]
+
+        # --- Complex values
+        ierr3, xarray = self.psspy.abuscplx(string=["VOLTAGE", "SHUNTACT", "SHUNTNOM", "MISMATCH"])
+        voltage, shunt_act, shunt_nom, mismatch_cplx = xarray
+
+        # --- Integer values
+        ierr4, iarray = self.psspy.abusint(string=["NUMBER", "TYPE"])
+        numbers, types = iarray
+
+        # --- Real values
+        ierr5, rarray = self.psspy.abusreal(string=["BASE", "PU", "KV", "ANGLE", "ANGLED", "MISMATCH"])
+        base_kv, pu, kv, angle_rad, angle_deg, mismatch_mag = rarray
+
+        # --- Generator data
+        ierr_g, gen_bus_ids = self.psspy.amachint(string=["NUMBER"])
+        ierr_pg, pgens = self.psspy.amachreal(string=["PGEN"])
+        ierr_qg, qgens = self.psspy.amachreal(string=["QGEN"])
+        gen_map = defaultdict(lambda: [0.0, 0.0])
+        for b, p, q in zip(gen_bus_ids[0], pgens[0], qgens[0]):
+            gen_map[b][0] += p
+            gen_map[b][1] += q
+
+        # --- Load data
+        ierr_l, load_bus_ids = self.psspy.aloadint(string=["NUMBER"])
+        ierr_pl, ploads = self.psspy.aloadcplx(string=["TOTALACT"])
+        load_map = defaultdict(lambda: [0.0, 0.0])
+        for b, pql in zip(load_bus_ids[0], ploads[0]):
+            load_map[b][0] += pql.real
+            load_map[b][1] += pql.imag
+
+        # Error check
+        if any(ierr != 0 for ierr in [ierr1, ierr3, ierr4, ierr5, ierr_g, ierr_pg, ierr_qg, ierr_l, ierr_pl]):
+            raise RuntimeError("Error retrieving bus snapshot data from PSSE.")
+
+        rows = []
+        for i in range(len(numbers)):
+            bus = numbers[i]
+            pgen, qgen = gen_map[bus]
+            pload, qload = load_map[bus]
+            # TODOD: these column names needs to be standardized
+            rows.append({
+                "BUS_ID":       bus,
+                "BUS_NAME":     bus_names[i].strip(),
+                #"TYPE":         4 if bus in self.engine.wec_buses else types[i], TODO update this Later
+                "TYPE":         types[i],  # TODO: update this later
+                "V_PU":         pu[i],
+                "V_KV":         kv[i],
+                "BASE_KV":      base_kv[i],
+                "PGEN_MW":      pgen,
+                "QGEN_MVAR":    qgen,
+                "PLOAD_MW":     pload,
+                "QLOAD_MVAR":   qload,
+                "P_MW":         pgen - pload,
+                "Q_MVAR":       qgen - qload,
+                "ANGLE_RAD":    angle_rad[i],
+                "ANGLE_DEG":    angle_deg[i],
+                "MISMATCH_MVA": mismatch_mag[i],
+                "MISMATCH_CPLX": mismatch_cplx[i],
+                "SHUNT_ACT":    shunt_act[i],
+                "SHUNT_NOM":    shunt_nom[i],
+            })
+
+        df = pd.DataFrame(rows)
+        df.attrs["df_type"] = "BUS"
+        return df
+    
+    def snapshot_Generators(self) -> pd.DataFrame:
+        """Snapshot of generator (machine) data at individual unit level."""
+
+        ierr1, char_arr = self.psspy.amachchar(string=["ID", "NAME"])
+        ierr2 = self.psspy.amachcount()[0]
+        ierr3, cplx_arr = self.psspy.amachcplx(string=["ZSORCE", "XTRAN", "PQGEN"])
+        ierr4, int_arr = self.psspy.amachint(string=["NUMBER", "STATUS"])
+        ierr5, real_arr = self.psspy.amachreal(string=["PGEN", "QGEN", "MBASE", "MVA", "GENTAP", "PERCENT"])
+
+        if any(ierr != 0 for ierr in [ierr1, ierr2, ierr3, ierr4, ierr5]):
+            raise RuntimeError("Error fetching generator (machine) data.")
+
+        gen_ids, gen_names = char_arr
+        zsource, xtran, pqgen = cplx_arr
+        bus_numbers, statuses = int_arr
+        pgen, qgen, mbase, mva, tap, pct = real_arr
+
+        rows = []
+        for i in range(len(bus_numbers)):
+            rows.append({
+                "GEN_ID":     f"G{i}" if gen_ids[i].strip() == '1' else gen_ids[i].strip(),
+                "BUS_ID":     bus_numbers[i],
+                "BUS_NAME":   gen_names[i].strip(),
+                "STATUS":     statuses[i],
+                "PGEN_MW":    pgen[i],
+                "QGEN_MVAR":  qgen[i],
+                "MBASE":      mbase[i],
+                "MVA":        mva[i],
+                "ZSOURCE":    zsource[i],
+                "XTRAN":      xtran[i],
+                "TAP":        tap[i],
+                "PCT_LOAD":   pct[i]
+            })
+
+        df = pd.DataFrame(rows)
+        df.attrs["df_type"] = "GEN"
+        return df
+    
+    def snapshot_Branches(self) -> pd.DataFrame:
+        """Snapshot of branch configuration and electrical parameters."""
+        ierr1, carray = self.psspy.abrnchar(string=["ID", "FROMNAME", "TONAME", "BRANCHNAME"])
+        ids, fromnames, tonames, brnames = carray
+
+        ierr2, xarray = self.psspy.abrncplx(string=["RX", "PQ", "PQLOSS", "FROMSHNT", "TOSHNT"])
+        rx, pq, pqloss, fromshnt, toshnt = xarray
+
+        ierr3, iarray = self.psspy.abrnint(string=["FROMNUMBER", "TONUMBER", "STATUS"])
+        ibus, jbus, status = iarray
+
+        ierr4, rarray = self.psspy.abrnreal(string=[
+            "RATE", "RATEA", "AMPS", "PUCUR", "PCTRATE"
+        ])
+        rate, ratea, amps, pucur, pctrate = rarray
+
+        if any(ierr != 0 for ierr in [ierr1, ierr2, ierr3, ierr4]):
+            raise RuntimeError("Error fetching branch static data.")
+
+        rows = []
+        for i in range(len(ibus)):
+            name = brnames[i].strip() or f"L{i}"
+            rows.append({
+                "ID": ids[i].strip(),
+                "BRANCH_NAME": name,
+                "IBUS": ibus[i],
+                "JBUS": jbus[i],
+                "FROM_NAME": fromnames[i].strip(),
+                "TO_NAME": tonames[i].strip(),
+                "STATUS": status[i],
+                "RX_PU": rx[i],
+                "SHUNT_FROM": fromshnt[i],
+                "SHUNT_TO": toshnt[i],
+                "RATE": rate[i],
+                "RATEA": ratea[i],
+                "AMPS": amps[i],
+                "PUCUR": pucur[i],
+                "PCT_RATE": pctrate[i],
+            })
+
+        df = pd.DataFrame(rows)
+        df.attrs["df_type"] = "BRANCH"
+        return df
+    
+    def snapshot_Loads(self) -> pd.DataFrame:
+        """
+        Snapshot of all in-service loads on the system, capturing actual/nominal values for power,
+        current, and distributed generation.
+        """
+        # --- Character data: bus name and load ID
+        ierr, carray = self.psspy.aloadchar(string=["NAME", "ID"])
+        bus_names, load_ids = carray
+
+        # --- Complex values: MW + jMvar for actual/nominal load, current, and DG
+        ierr, xarray = self.psspy.aloadcplx(string=[
+            "MVAACT", "MVANOM", "ILACT", "ILNOM",
+            "TOTALACT", "TOTALNOM", "LDGNACT", "LDGNNOM"
+        ])
+        mva_act, mva_nom, il_act, il_nom, total_act, total_nom, dg_act, dg_nom = xarray
+
+        # --- Integer values: bus number, load status
+        ierr, iarray = self.psspy.aloadint(string=["NUMBER", "STATUS"])
+        bus_nums, status = iarray
+
+        # --- Real values: magnitude of all above (already returned separately from cplx)
+        ierr, rarray = self.psspy.aloadreal(string=[
+            "MVAACT", "MVANOM", "ILACT", "ILNOM",
+            "TOTALACT", "TOTALNOM", "LDGNACT", "LDGNNOM"
+        ])
+        mva_act_r, mva_nom_r, il_act_r, il_nom_r, total_act_r, total_nom_r, dg_act_r, dg_nom_r = rarray
+
+        rows = []
+        for i in range(len(bus_nums)):
+            rows.append({
+                "BUS_NAME":       bus_names[i].strip(),
+                "LOAD_ID":        load_ids[i].strip(),
+                "BUS_NUMBER":     bus_nums[i],
+                "P_MW":           total_act[i].real,
+                "Q_MVAR":         total_act[i].imag,
+                "STATUS":         status[i],
+                "MVAACT":         mva_act[i],
+                "MVANOM":         mva_nom[i],
+                "ILACT":          il_act[i],
+                "ILNOM":          il_nom[i],
+                "TOTALACT":       total_act[i],
+                "TOTALNOM":       total_nom[i],
+                "LDGNACT":        dg_act[i],
+                "LDGNNOM":        dg_nom[i],
+                "MVAACT_MAG":     mva_act_r[i],
+                "MVANOM_MAG":     mva_nom_r[i],
+                "ILACT_MAG":      il_act_r[i],
+                "ILNOM_MAG":      il_nom_r[i],
+                "TOTALACT_MAG":   total_act_r[i],
+                "TOTALNOM_MAG":   total_nom_r[i],
+                "LDGNACT_MAG":    dg_act_r[i],
+                "LDGNNOM_MAG":    dg_nom_r[i],
+            })
+
+        df = pd.DataFrame(rows)
+        df.attrs["df_type"] = "LOAD"
+        return df
+
+
+
+
+
 
 
 

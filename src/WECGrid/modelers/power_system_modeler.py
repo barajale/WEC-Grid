@@ -1,26 +1,47 @@
-"""
-Abstract base class for power‐system modelers
-"""
+# power_system_modeler.py
 
-import abc
-from typing import Any
+from abc import ABC, abstractmethod
+from typing import Any, Optional, Dict
+import pandas as pd
+from .network_state import NetworkState
 
-class PowerSystemModeler(abc.ABC):
+
+class PowerSystemModeler(ABC):
     def __init__(self, case_file: str, engine: Any):
-        """
-        Args:
-            case_file: path to the RAW/PYPSA network file
-            engine: reference back to the Engine orchestrator
-        """
         self.case_file = case_file
-        self.engine    = engine
+        self.engine = engine
+        self.state = NetworkState()  # ← unified structure for all modelers
 
-    @abc.abstractmethod
-    def init_api(self) -> None:
-        """
-        Initialize the external API (PSS®E or PyPSA) and load the network.
-        """
+    @abstractmethod
+    def init_api(self) -> bool:
+        """Initialize backend API and load network into memory."""
         pass
 
-    # you can add other abstract methods here,
-    # e.g. solve_powerflow, get_bus_dataframe_t, get_generator_dataframe_t, etc.
+    @abstractmethod
+    def solve_powerflow(self) -> bool:
+        #"""Run a power flow solution and update `self.state`."""
+        """Run a power flow solution, not updating state"""
+        pass
+
+    @abstractmethod
+    def add_wec(self, model: str, from_bus: int, to_bus: int) -> bool:
+        """Inject a WEC into the grid model."""
+        pass
+
+    @abstractmethod
+    def simulate(self, load_curve: bool = True, plot: bool = True) -> bool:
+        """Run full time-series simulation."""
+        pass
+
+    @abstractmethod
+    def take_snapshot(self, timestamp: pd.Timestamp) -> None:
+        """Capture and store current network state into `self.state`."""
+        pass
+
+    @property
+    def bus(self) -> Optional[pd.DataFrame]:
+        return self.state.bus
+
+    @property
+    def bus_t(self) -> Dict[str, pd.DataFrame]:
+        return self.state.bus_t

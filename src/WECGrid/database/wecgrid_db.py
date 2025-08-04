@@ -44,4 +44,8 @@ class WECGridDB:
             
     # todo pull annd push wec and sim data, inital db with schema
     
+    def initialize_db(self):
+        pass
+    
+    
     

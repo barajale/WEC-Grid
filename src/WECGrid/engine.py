@@ -11,12 +11,16 @@ from wecgrid.modelers import PSSEModeler, PyPSAModeler
 from wecgrid.plot import WECGridPlotter
 from wecgrid.wec import Farm
 
+
 @dataclass
 class SimulationTimeline:
-    """Holds start, length and frequency → lazily generates snapshots."""
+    """
+    Holds start time, duration, and interval frequency.
+    Lazily generates simulation snapshots as a DatetimeIndex.
+    """
     start_time: datetime = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    sim_length: int = 288
-    freq: str = "5T"
+    sim_length: int = 288  # Number of intervals (e.g. 288 for 24h at 5-min intervals)
+    freq: str = "5T"       # Interval frequency: "5T" = 5 minutes
 
     @property
     def snapshots(self) -> pd.DatetimeIndex:
@@ -26,10 +30,13 @@ class SimulationTimeline:
             freq=self.freq,
         )
 
+
 class Engine:
     """
-        TODO add description
+    Main orchestrator for WEC-grid simulations.
+    Coordinates PSSE and PyPSA modelers, manages WEC farms, handles DB, and plotting.
     """
+
     def __init__(
         self,
         case_file: str,
@@ -38,21 +45,70 @@ class Engine:
     ):
         """
         Args:
-            case_file: path to the PSS®E RAW file (used by both PSSE & PyPSA)
-            timeline: SimulationTimeline object (optional)
-            db_path: path to SQLite file (optional)
+            case_file: Path to the PSS®E RAW file (input for both PSSE & PyPSA)
+            timeline: SimulationTimeline object (default: 1-day at 5-min intervals)
+            db_path: Optional path to SQLite DB file (uses default if None)
         """
         if not os.path.isfile(case_file):
             raise FileNotFoundError(f"PSS®E RAW not found: {case_file}")
+        
         self.case_file = case_file
-        self.case_name = os.path.basename(case_file)
+        self.case_name = os.path.splitext(os.path.basename(case_file))[0].replace("_", " ").replace("-", " ")
         self.timeline = timeline
         self.snapshots = timeline.snapshots
+
         self.psse: Optional[PSSEModeler] = None
         self.pypsa: Optional[PyPSAModeler] = None
         self.farms: List[Farm] = []
+
         self.db = WECGridDB(db_path)
         self.plot = WECGridPlotter(self)
+
+    def load(self, software: List[str]) -> None:
+        """
+        Initialize one or more power system backends (PSSE or PyPSA).
+        """
+        for name in software:
+            name = name.lower()
+            if name == "psse":
+                self.psse = PSSEModeler(self.case_file, self)
+                self.psse.init_api()
+                #TODO: check if error is thrown if init fails
+            elif name == "pypsa":
+                self.pypsa = PyPSAModeler(self.case_file, self)
+                #self.pypsa.init_api()
+                # if self.psse is not None:
+                #     self.psse.adjust_reactive_lim()
+                #TODO: check if error is thrown if init fails
+            else:
+                raise ValueError(f"Unsupported software: '{name}'. Use 'psse' or 'pypsa'.")
+
+    def apply_wecs(
+        self,
+        sim_id: Optional[int] = None,
+        model: str = "RM3",
+        farm_size: int = 8,
+        ibus: Optional[int] = None,
+        jbus: int = 1,
+        mbase: float = 0.01,
+        config: Optional[dict] = None,
+    ) -> bool:
+        """
+        Apply a WEC farm to the grid at a given bus location.
+        """
+        pass
+
+    def generate_load_profiles(self) -> bool:
+        """
+        Generate and store synthetic load profiles for PSSE and PyPSA.
+        """
+        pass
+
+    def simulate(self, load_curve: bool = True, plot: bool = True) -> bool:
+        """
+        Run simulation across selected backends.
+        """
+        pass
 
 # # src/wecgrid/engine.py
 
