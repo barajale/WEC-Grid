@@ -1,39 +1,12 @@
-from .engine import WECGridEngine as Engine
+# src/wecgrid/__init__.py
 
-__version__ = "0.1.0"
+"""
+WEC-Grid Python package
+Author: Alexander Barajas-Ritchie
+Email: barajale@oregonstate.edu
+"""
 
-# Software interfaces
-from .psse.psse_interface import PSSEInterface
-from .pypsa.pypsa_interface import PYPSAInterface
+# Expose the main Engine entry point
+from .engine import Engine
 
-
-from .cec.cec_class import CEC
-from .database.connection_class import SQLiteConnection
-from .utilities.util import dbQuery, read_paths
-from .plot.psse_viz import PSSEVisualizer
-from .plot.pypsa_viz import PyPSAVisualizer
-from .wec.device import WEC
-
-# # WecGrid/__init__.py
-
-# # Import the WecGrid class from core.py and explicitly expose it
-# from .core import WecGrid as WecGridClass
-
-# # Assign the class to the package namespace
-# WecGrid = WecGridClass  # Now `WecGrid` at the package level is the class
-
-# # Define what is exported when `from WecGrid import *` is used
-# __all__ = ["WecGrid"]
-
-# # Add version information
-# __version__ = "0.1.0"
-
-# # Import other submodules if needed (optional)
-# from .PSSe.psse_wrapper import PSSeWrapper
-# from .cec.cec_class import CEC
-# from .database_handler.connection_class import SQLiteConnection
-# from .pyPSA.pypsa_wrapper import pyPSAWrapper
-# from .utilities.util import dbQuery, read_paths
-# from .viz.psse_viz import PSSEVisualizer
-# from .viz.pypsa_viz import PyPSAVisualizer
-# from .wec.wec_class import WEC
+__all__ = ["Engine"]

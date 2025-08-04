@@ -1,11 +1,13 @@
 """
-Visualization module for WEC-GRID.
-Provides functionalities to visualize grid structures, WEC model simulations, and other relevant data visualizations.
+WEC-Grid plotting tools
 """
 
-from .psse_viz import PSSEVisualizer
-from .pypsa_viz import PyPSAVisualizer
-from .core_viz import WECGridVisualizer
+from .wecgrid_plotter   import WECGridPlotter
+from .bus_plotter       import BusPlotter
+from .generator_plotter import GeneratorPlotter
 
-# Define the public API
-__all__ = ["PSSEVisualizer", "PyPSAVisualizer", "WECGridVisualizer"]
+__all__ = [
+    "WECGridPlotter",
+    "BusPlotter",
+    "GeneratorPlotter",
+]

@@ -1,3 +1,3 @@
-from .connection_class import SQLiteConnection
+from .wecgrid_db import WECGridDB
 
-__all__ = ["SQLiteConnection"]
+__all__ = ["WECGridDB"]
