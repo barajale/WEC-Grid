@@ -29,13 +29,8 @@ def silence_stdout():
         sys.stdout = old_stdout
         
 class PSSEModeler(PowerSystemModeler):
-    def __init__(self, case_file: str, engine: Any):
-        super().__init__(case_file, engine)
-
-        # PSS®E specific internal state
-        self._i = None
-        self._f = None
-        self._s = None
+    def __init__(self, engine: Any):
+        super().__init__(engine)
 
 
     def init_api(self) -> bool:
@@ -43,6 +38,8 @@ class PSSEModeler(PowerSystemModeler):
         Debug = False  # Set to True for debugging output
         try:
             with silence_stdout():
+                import pssepath # TODO double check this works, conda work around might not be needed
+                pssepath.add_pssepath()
                 import psspy
                 import psse35
                 import redirect
@@ -63,11 +60,11 @@ class PSSEModeler(PowerSystemModeler):
         except ModuleNotFoundError as e:
             raise ImportError("PSS®E not found or not configured correctly.") from e
 
-        ext = self.case_file.lower()
+        ext = self.engine.case_file.lower()
         if ext.endswith(".sav"):
-            ierr = psspy.case(self.case_file)
+            ierr = psspy.case(self.engine.case_file)
         elif ext.endswith(".raw"):
-            ierr = psspy.read(1, self.case_file)
+            ierr = psspy.read(1, self.engine.case_file)
         else:
             print("Unsupported case file format.")
             return False
@@ -77,11 +74,11 @@ class PSSEModeler(PowerSystemModeler):
             return False
     
 
-        if self.psspy.fnsl() != 0:
+        if self.psspy.fnsl() != 0: # todo change to solve_powerflow()
             print("Powerflow solution failed.")
             return False
             
-        self.take_snapshot(timestamp=self.engine.timeline.start_time)
+        self.take_snapshot(timestamp=self.engine.time.start_time)
         print("PSS®E software initialized")
         return True
 

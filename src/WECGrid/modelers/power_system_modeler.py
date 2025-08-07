@@ -7,10 +7,9 @@ from .network_state import NetworkState
 
 
 class PowerSystemModeler(ABC):
-    def __init__(self, case_file: str, engine: Any):
-        self.case_file = case_file
+    def __init__(self, engine: Any):
         self.engine = engine
-        self.state = NetworkState()  # ← unified structure for all modelers
+        self.state = NetworkState()
 
     @abstractmethod
     def init_api(self) -> bool:

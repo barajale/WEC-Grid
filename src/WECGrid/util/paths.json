@@ -1,0 +1,12 @@
+{
+  "project": "C:/Users/alexb/research/WEC-GRID",
+  "src": "C:/Users/alexb/research/WEC-GRID/src",
+  "package": "C:/Users/alexb/research/WEC-GRID/src/wecgrid",
+  "wec_sim": "C:/Users/alexb/research/WEC-Sim",
+  "psse": "C:/Program Files/PTI/PSSE35/35.3",
+  "wec_models": "./models/wec_models",
+  "grid_models": "./models/grid_models",
+  "RM3": "./models/wec_models/RM3",
+  "LUPA": "./models/wec_models/LUPA",
+  "IEEE30": "./models/grid_models/IEEE_30_bus.RAW"
+}

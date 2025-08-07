@@ -6,10 +6,12 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from typing import Optional
+import pandas as pd
 
 # default location for the DB file
 _CURR_DIR = os.path.dirname(os.path.abspath(__file__))
 _DEFAULT_DB = os.path.join(_CURR_DIR, "WEC-GRID.db")
+DB_PATH = _DEFAULT_DB
 
 class WECGridDB:
     def __init__(self, db_path: Optional[str] = None):
@@ -46,6 +48,25 @@ class WECGridDB:
     
     def initialize_db(self):
         pass
-    
-    
-    
+        
+    def query(self, sql: str, return_type: str = "raw"):
+        """
+        Execute a SQL query and return results.
+
+        Args:
+            sql: SQL string to execute.
+            return_type: "raw" for raw tuples, "df" for pandas DataFrame.
+
+        Returns:
+            Query results depending on return_type.
+        """
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            result = cursor.fetchall()
+
+            if return_type == "df":
+                columns = [desc[0] for desc in cursor.description]
+                return pd.DataFrame(result, columns=columns)
+
+            return result

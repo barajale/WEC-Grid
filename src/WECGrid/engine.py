@@ -9,7 +9,8 @@ import pandas as pd
 from wecgrid.database.wecgrid_db import WECGridDB
 from wecgrid.modelers import PSSEModeler, PyPSAModeler
 from wecgrid.plot import WECGridPlotter
-from wecgrid.wec import Farm
+from wecgrid.wec import WECFarm, WECSimRunner
+from wecgrid.util import WECGridPathManager
 
 
 @dataclass
@@ -32,50 +33,73 @@ class SimulationTimeline:
 
 
 class Engine:
+    #TODO name it WECGridEngine? think on it 
     """
     Main orchestrator for WEC-grid simulations.
     Coordinates PSSE and PyPSA modelers, manages WEC farms, handles DB, and plotting.
     """
 
     def __init__(
-        self,
-        case_file: str,
-        timeline: SimulationTimeline = SimulationTimeline(),
-        db_path: Optional[str] = None,
+        self
     ):
         """
-        Args:
-            case_file: Path to the PSS®E RAW file (input for both PSSE & PyPSA)
-            timeline: SimulationTimeline object (default: 1-day at 5-min intervals)
-            db_path: Optional path to SQLite DB file (uses default if None)
-        """
-        if not os.path.isfile(case_file):
-            raise FileNotFoundError(f"PSS®E RAW not found: {case_file}")
-        
-        self.case_file = case_file
-        self.case_name = os.path.splitext(os.path.basename(case_file))[0].replace("_", " ").replace("-", " ")
-        self.timeline = timeline
-        self.snapshots = timeline.snapshots
 
+        """
+        self.case_file: Optional[str] = None
+        self.case_name: Optional[str] = None
+        self.time = SimulationTimeline()
+        self.path_manager = WECGridPathManager()
         self.psse: Optional[PSSEModeler] = None
         self.pypsa: Optional[PyPSAModeler] = None
-        self.farms: List[Farm] = []
-
-        self.db = WECGridDB(db_path)
+        self.farms: List[WECFarm] = []
+        self.database = WECGridDB()
         self.plot = WECGridPlotter(self)
+        self.wec_sim: WECSimRunner = WECSimRunner(self.database, self.path_manager)
+    
+        
+    
+    def case(self, case_file: str):
+        """
+        Set the power system case for the simulation.
+        
+        Args:
+            case_file: Either a full path to a .RAW file or a key in the PathManager (e.g., 'IEEE30').
+        """
+        # Try to resolve using PathManager first
+        try:
+            resolved_path = self.path_manager.get_path(case_file)
+            if os.path.isfile(resolved_path):
+                case_file = resolved_path
+        except ValueError:
+            # If not a known key, assume it’s a direct path
+            pass
+
+        if not os.path.isfile(case_file):
+            raise FileNotFoundError(f"PSS®E RAW not found: {case_file}")
+
+        self.case_file = case_file
+        self.case_name = (
+            os.path.splitext(os.path.basename(case_file))[0]
+            .replace("_", " ")
+            .replace("-", " ")
+        )
+        
 
     def load(self, software: List[str]) -> None:
         """
         Initialize one or more power system backends (PSSE or PyPSA).
         """
+        if self.case_file is None:
+            raise ValueError("No case file set. Use `engine.case('path/to/case.RAW')` first.")
+        
         for name in software:
             name = name.lower()
             if name == "psse":
-                self.psse = PSSEModeler(self.case_file, self)
+                self.psse = PSSEModeler(self)
                 self.psse.init_api()
                 #TODO: check if error is thrown if init fails
             elif name == "pypsa":
-                self.pypsa = PyPSAModeler(self.case_file, self)
+                self.pypsa = PyPSAModeler(self)
                 #self.pypsa.init_api()
                 # if self.psse is not None:
                 #     self.psse.adjust_reactive_lim()
@@ -83,18 +107,16 @@ class Engine:
             else:
                 raise ValueError(f"Unsupported software: '{name}'. Use 'psse' or 'pypsa'.")
 
-    def apply_wecs(
+    def apply_wec(
         self,
-        sim_id: Optional[int] = None,
+        farm_name: str,
+        size: int = 1,
+        sim_id: int = -1,
         model: str = "RM3",
-        farm_size: int = 8,
-        ibus: Optional[int] = None,
-        jbus: int = 1,
-        mbase: float = 0.01,
-        config: Optional[dict] = None,
+        bus_location: int = 1
     ) -> bool:
         """
-        Apply a WEC farm to the grid at a given bus location.
+        Build Farm object and applies them to loaded Power System modelers
         """
         pass
 
