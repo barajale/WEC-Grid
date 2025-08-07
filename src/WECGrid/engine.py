@@ -47,11 +47,11 @@ class Engine:
         """
         self.case_file: Optional[str] = None
         self.case_name: Optional[str] = None
-        self.time = SimulationTimeline()
+        self.time = SimulationTimeline() # TODO this needs more functionality
         self.path_manager = WECGridPathManager()
         self.psse: Optional[PSSEModeler] = None
         self.pypsa: Optional[PyPSAModeler] = None
-        self.farms: List[WECFarm] = []
+        self.wec_farms: List[WECFarm] = []
         self.database = WECGridDB()
         self.plot = WECGridPlotter(self)
         self.wec_sim: WECSimRunner = WECSimRunner(self.database, self.path_manager)
@@ -113,12 +113,27 @@ class Engine:
         size: int = 1,
         sim_id: int = -1,
         model: str = "RM3",
-        bus_location: int = 1
-    ) -> bool:
+        bus_location: int = 1,
+        connecting_bus: int = 1, # todo this should default to swing bus
+    ) -> None:
         """
         Build Farm object and applies them to loaded Power System modelers
         """
-        pass
+        wec_farm: WECFarm = WECFarm(
+            farm_name=farm_name,
+            database=self.database,
+            time=self.time,
+            sim_id= sim_id,
+            model=model,
+            bus_location=bus_location, 
+            connecting_bus=connecting_bus,
+            size=size,
+            
+        )
+        self.wec_farms.append(wec_farm)
+        
+        if self.psse is not None:
+            self.psse.add_wec_farm(wec_farm)
 
     def generate_load_profiles(self) -> bool:
         """

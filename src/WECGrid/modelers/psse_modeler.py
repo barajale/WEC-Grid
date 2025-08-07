@@ -17,6 +17,8 @@ import pandas as pd
 from .power_system_modeler import PowerSystemModeler
 from .network_state import NetworkState  # used internally
 
+from ..wec.wecfarm import WECFarm
+
 
 @contextlib.contextmanager
 def silence_stdout():
@@ -32,7 +34,16 @@ class PSSEModeler(PowerSystemModeler):
     def __init__(self, engine: Any):
         super().__init__(engine)
 
-
+    def __repr__(self) -> str:
+        return (
+            f"psse:\n"
+            f"├─ case: {self.engine.case_name}\n"
+            f"├─ buses: {len(self.state.bus)}\n"
+            f"├─ generators: {len(self.state.gen)}\n"
+            f"├─ loads: {len(self.state.load)}\n"
+            f"└─ branches: {len(self.state.branch)}"
+        )
+        
     def init_api(self) -> bool:
         """Initialize the PSS®E environment and load the case."""
         Debug = False  # Set to True for debugging output
@@ -95,12 +106,13 @@ class PSSEModeler(PowerSystemModeler):
         
         
 
-    def add_wec(self, model: str, from_bus: int, to_bus: int) -> bool:
-        """Inject a WEC system into the PSS®E model.
-        
-        Adds a WEC system to the PSSE model by:
+    #def add_wec_farm(self, model: str, from_bus: int, to_bus: int) -> bool:
+    def add_wec_farm(self, farm: WECFarm) -> bool:
+        """Inject a WEC farm into the PSS®E model.
+
+        Adds a WEC farm to the PSSE model by:
         1. Adding a new bus.
-        2. Adding a generator to the bus.
+        2. Adding a generator to the bus to represent the farm.
         3. Adding a branch (line) connecting the new bus to an existing bus.
 
         Parameters:
@@ -110,48 +122,50 @@ class PSSEModeler(PowerSystemModeler):
         - jbus (int): Existing bus ID to connect the line from.
         """
     
-        from_bus_voltage = self.psspy.busdat(from_bus, "BASE")[1]
+        ierr, rval = self.psspy.busdat(farm.connecting_bus, "BASE")
+        
+        if ierr > 0:
+            print(f"Error retrieving base voltage for bus {farm.connecting_bus}. PSS®E error code: {ierr}")
 
         # Step 1: Add a new bus
         
+        
+        
         ierr = self.psspy.bus_data_4(
-            ibus=to_bus, 
+            ibus=farm.bus_location,
             inode=0, 
             intgar1=2, # Bus type (2 = PV bus ), area, zone, owner
-            realar1=from_bus_voltage, # Base voltage of the from bus in kV
-            name= f"WEC BUS {to_bus}", # Name of the bus
+            realar1=rval, # Base voltage of the from bus in kV
+            name= f"WEC BUS {farm.bus_location}", # Name of the bus
         )
         if ierr > 0:
-            print(f"Error adding bus {to_bus}. PSS®E error code: {ierr}")
+            print(f"Error adding bus {farm.bus_location}. PSS®E error code: {ierr}")
             return False
 
         # Step 2: Add plant data
         ierr = self.psspy.plant_data_4(
-            ibus=to_bus, # add plant a wec bus 
+            ibus=farm.bus_location, # add plant a wec bus
             inode=0
         )
         if ierr > 0:
-            print(f"Error adding plant data to bus {to_bus}. PSS®E error code: {ierr}")
+            print(f"Error adding plant data to bus {farm.bus_location}. PSS®E error code: {ierr}")
             return False
+        
+        
+        ierr = self.psspy.machine_data_4(
+            ibus=farm.bus_location, 
+            id = farm.gen_id, # maybe should just be a number? come back
+            realar1= 0.1, # PG, machine active power (0.0 by default)
+            realar5= 3.0, # PT 30 kW
+            realar6= 0.0, #PB
+            realar7=farm.MBASE # 1 MVA typically
+        )
 
-        for i, wec_obj in enumerate(self.engine.wecObj_list):
-            # Step 3: Add a generator at the new bus
-            wec_obj.gen_id = f"W{i}"
-            wec_obj.gen_name = f"{wec_obj.gen_id}-{wec_obj.model}-{wec_obj.ID}"
-            ierr = self.psspy.machine_data_4(
-                ibus=to_bus, 
-                id= f"W{i}", # maybe should just be a number? come back
-                realar1= 0.1, # PG, machine active power (0.0 by default)
-                realar5= 3.0, # PT 30 kW
-                realar6= 0.0, #PB
-                realar7=wec_obj.MBASE # 1 MVA typically
+        if ierr > 0:
+            print(
+                f"Error adding generator {farm.gen_id} to bus {farm.bus_location}. PSS®E error code: {ierr}"
             )
-
-            if ierr > 0:
-                print(
-                    f"Error adding generator {wec_obj.gen_id} to bus {to_bus}. PSS®E error code: {ierr}"
-                )
-                return False
+            return False
 
         # Step 4: Add a branch (line) connecting the existing bus to the new bus
         realar_array = [0.0] * 12
@@ -160,19 +174,20 @@ class PSSEModeler(PowerSystemModeler):
         ratings_array = [0.0] * 12
         ratings_array[0] = 130.00  # RATEA
         ierr = self.psspy.branch_data_3(
-            ibus=to_bus, # from bus
-            jbus=from_bus,  # to bus
+            ibus=farm.bus_location, # from bus
+            jbus=farm.connecting_bus,  # to bus
             realar=realar_array,
             namear="WEC Line"
         )
         if ierr > 0:
             print(
-                f"Error adding branch from {to_bus} to {from_bus}. PSS®E error code: {ierr}"
+                f"Error adding branch from {farm.bus_location} to {farm.connecting_bus}. PSS®E error code: {ierr}"
             )
             return False
 
+        self.state = NetworkState()  # Reset state after adding farm
         self.solve_powerflow()
-        self.take_snapshot(snapshot=self.engine.start_time, metadata={"step": "added wec components"})
+        self.take_snapshot(timestamp=self.engine.time.start_time)
         return True
     
     
@@ -185,7 +200,15 @@ class PSSEModeler(PowerSystemModeler):
         # if load_curve and self.engload_profiles.empty:
         #     self.engine.generate_load_profiles()
     
-        for snapshot in self.engine.snapshots: 
+        for snapshot in self.engine.time.snapshots: 
+            for farm in self.engine.wec_farms:
+                power = farm.power_at_snapshot(snapshot)
+                ierr = self.psspy.machine_chng_4(
+                        ibus=farm.bus_location, 
+                        id=farm.gen_id, 
+                        realar=[power] + [self._f]*16) > 0
+                if ierr > 0: 
+                    raise Exception(f"Error setting generator power at snapshot {snapshot}")
             # for idx, wec_obj in enumerate(self.engine.wecObj_list):
             #     pg = float(wec_obj.dataframe.loc[wec_obj.dataframe.snapshots == snapshot].pg)
             #     ierr = self.psspy.machine_chng_4(

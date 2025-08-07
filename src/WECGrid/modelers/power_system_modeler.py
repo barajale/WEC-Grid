@@ -5,6 +5,8 @@ from typing import Any, Optional, Dict
 import pandas as pd
 from .network_state import NetworkState
 
+from ..wec.wecfarm import WECFarm
+
 
 class PowerSystemModeler(ABC):
     def __init__(self, engine: Any):
@@ -23,8 +25,8 @@ class PowerSystemModeler(ABC):
         pass
 
     @abstractmethod
-    def add_wec(self, model: str, from_bus: int, to_bus: int) -> bool:
-        """Inject a WEC into the grid model."""
+    def add_wec_farm(self, farm: WECFarm) -> bool:
+        """Inject a WEC farm into the grid model."""
         pass
 
     @abstractmethod

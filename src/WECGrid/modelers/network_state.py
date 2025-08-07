@@ -14,6 +14,7 @@ class AttrDict(dict):
 
     def __setattr__(self, name, value):
         self[name] = value
+        
 
 class NetworkState:
     """
@@ -34,6 +35,23 @@ class NetworkState:
         self.gen_t    = AttrDict()
         self.branch_t = AttrDict()
         self.load_t   = AttrDict()
+        
+        
+    def __repr__(self) -> str:
+        def ts_keys(d):
+            return ", ".join(d.keys()) if d else "none"
+
+        return (
+            "NetworkState:\n"
+            f"├─ bus:      {len(self.bus) if self.bus is not None else 0}\n"
+            f"│   └─ time-series: {ts_keys(self.bus_t)}\n"
+            f"├─ gen:      {len(self.gen) if self.gen is not None else 0}\n"
+            f"│   └─ time-series: {ts_keys(self.gen_t)}\n"
+            f"├─ branch:   {len(self.branch) if self.branch is not None else 0}\n"
+            f"│   └─ time-series: {ts_keys(self.branch_t)}\n"
+            f"└─ load:     {len(self.load) if self.load is not None else 0}\n"
+            f"    └─ time-series: {ts_keys(self.load_t)}"
+        )
 
     def append_snapshot(self, component: str, timestamp: pd.Timestamp, df: pd.DataFrame):
         """
