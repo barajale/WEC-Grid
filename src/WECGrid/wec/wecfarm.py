@@ -63,8 +63,9 @@ class WECFarm:
         if df is None or df.empty:
             raise RuntimeError(f"[Farm] Failed to load WEC data for sim_id={self.sim_id}")
 
-        df["snapshots"] = self.time.snapshots
-        df.set_index("snapshots", inplace=True)
+        # Apply time index at 5 min resolution using start time
+        df["snapshots"] = pd.date_range(start=self.time.start_time, periods=df.shape[0], freq="5T")
+        df.set_index("snapshots", inplace=True) 
 
         for i in range(self.size):
             name = f"{self.model}_{self.sim_id}_{i}"

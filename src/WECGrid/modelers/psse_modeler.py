@@ -6,7 +6,7 @@ PSS®E Modeler - Barebones Implementation
 import os
 import sys
 import contextlib
-from typing import Any
+from typing import Any, List, Optional
 from datetime import datetime
 from collections import defaultdict
 
@@ -191,10 +191,8 @@ class PSSEModeler(PowerSystemModeler):
         return True
     
     
-    
-    
 
-    def simulate(self, load_curve: bool = True, plot: bool = True) -> bool:
+    def simulate(self, load_curve: Optional[pd.DataFrame] = None, plot: bool = True) -> bool:
         """Run a time-series simulation with WEC data injection."""
         
         # if load_curve and self.engload_profiles.empty:
@@ -209,49 +207,33 @@ class PSSEModeler(PowerSystemModeler):
                         realar=[power] + [self._f]*16) > 0
                 if ierr > 0: 
                     raise Exception(f"Error setting generator power at snapshot {snapshot}")
-            # for idx, wec_obj in enumerate(self.engine.wecObj_list):
-            #     pg = float(wec_obj.dataframe.loc[wec_obj.dataframe.snapshots == snapshot].pg)
-            #     ierr = self.psspy.machine_chng_4(
-            #         ibus=wec_obj.bus_location, 
-            #         id=wec_obj.gen_id, 
-            #         realar=[pg] + [self._f]*16) > 0
-            #     if ierr > 0: 
-            #         raise Exception(f"Error setting generator power at snapshot {snapshot}")
-            # if load_curve:
-            #     for bus in self.load_profiles.columns:
-            #         pl = float(self.load_profiles.loc[snapshot, bus])
-            #         ierr = self.psspy.load_data_6(
-            #             ibus=bus, 
-            #             realar=[pl] + [self._f]*7)
-            #     if ierr > 0:
-            #         raise Exception(f"Error setting load at bus {bus} on snapshot {snapshot}")
+            if load_curve is not None:
+                for bus in load_curve.columns:
+                    pl = float(load_curve.loc[snapshot, bus])
+                    ierr = self.psspy.load_data_6(
+                        ibus=bus, 
+                        realar=[pl] + [self._f]*7)
+                if ierr > 0:
+                    raise Exception(f"Error setting load at bus {bus} on snapshot {snapshot}")
             if self.solve_powerflow():
                 self.take_snapshot(timestamp=snapshot)
             else:
                 raise Exception(f"Powerflow failed at snapshot {snapshot}")
-        return True 
-    
-    
+        return True
+
     def take_snapshot(self, timestamp: datetime) -> None:
         """
             TODO fill in later
         """
-
-        # --- Update current snapshot ---
-        self.state.bus    = self.snapshot_Buses()
-        self.state.gen    = self.snapshot_Generators()
-        self.state.branch = self.snapshot_Branches()
-        self.state.load   = self.snapshot_Loads()
-
         # --- Append time-series for each component ---
-        self.state.append_snapshot("bus",    timestamp, self.state.bus)
-        self.state.append_snapshot("gen",    timestamp, self.state.gen)
-        self.state.append_snapshot("branch", timestamp, self.state.branch)
-        self.state.append_snapshot("load",   timestamp, self.state.load)
+        self.state.update("bus",    timestamp, self.snapshot_buses())
+        self.state.update("gen",    timestamp, self.snapshot_generators())
+        self.state.update("branch", timestamp, self.snapshot_branches())
+        self.state.update("load",   timestamp, self.snapshot_loads())
 
 
    
-    def snapshot_Buses(self) -> pd.DataFrame:
+    def snapshot_buses(self) -> pd.DataFrame:
         """
         Snapshot of all buses, capturing voltage, angle, shunt, mismatch, and net P/Q.
         Includes total generation and load per bus.
@@ -325,7 +307,7 @@ class PSSEModeler(PowerSystemModeler):
         df.attrs["df_type"] = "BUS"
         return df
     
-    def snapshot_Generators(self) -> pd.DataFrame:
+    def snapshot_generators(self) -> pd.DataFrame:
         """Snapshot of generator (machine) data at individual unit level."""
 
         ierr1, char_arr = self.psspy.amachchar(string=["ID", "NAME"])
@@ -363,7 +345,7 @@ class PSSEModeler(PowerSystemModeler):
         df.attrs["df_type"] = "GEN"
         return df
     
-    def snapshot_Branches(self) -> pd.DataFrame:
+    def snapshot_branches(self) -> pd.DataFrame:
         """Snapshot of branch configuration and electrical parameters."""
         ierr1, carray = self.psspy.abrnchar(string=["ID", "FROMNAME", "TONAME", "BRANCHNAME"])
         ids, fromnames, tonames, brnames = carray
@@ -407,7 +389,7 @@ class PSSEModeler(PowerSystemModeler):
         df.attrs["df_type"] = "BRANCH"
         return df
     
-    def snapshot_Loads(self) -> pd.DataFrame:
+    def snapshot_loads(self) -> pd.DataFrame:
         """
         Snapshot of all in-service loads on the system, capturing actual/nominal values for power,
         current, and distributed generation.

@@ -1,8 +1,9 @@
 # src/wecgrid/modelers/network_state.py
 
 import pandas as pd
-from typing import Dict, Optional
+from typing import Optional, Dict
 from collections import defaultdict
+
 
 class AttrDict(dict):
     """Dictionary that allows attribute-style access: d.key == d['key']"""
@@ -14,29 +15,30 @@ class AttrDict(dict):
 
     def __setattr__(self, name, value):
         self[name] = value
-        
+
 
 class NetworkState:
     """
-    Standardized snapshot and time-series container for grid component data.
-    Each attribute (e.g., bus, gen) holds the latest snapshot as a DataFrame.
-    *_t attributes hold a dictionary of DataFrames indexed by time.
+    Standardized container for power system snapshot and time-series data.
+
+    Attributes:
+        - .bus, .gen, .branch, .load → current snapshots as DataFrames
+        - .bus_t, .gen_t, .branch_t, .load_t → time-series dicts (AttrDict[str → DataFrame])
     """
 
     def __init__(self):
-        # Current snapshot DataFrames
-        self.bus: Optional[pd.DataFrame]    = None
-        self.gen: Optional[pd.DataFrame]    = None
+        # Snapshot (single-time) dataframes
+        self.bus: Optional[pd.DataFrame] = None
+        self.gen: Optional[pd.DataFrame] = None
         self.branch: Optional[pd.DataFrame] = None
-        self.load: Optional[pd.DataFrame]   = None
+        self.load: Optional[pd.DataFrame] = None
 
-        # Time-series dictionaries (e.g., { "PGEN_MW": DataFrame })
-        self.bus_t    = AttrDict()
-        self.gen_t    = AttrDict()
-        self.branch_t = AttrDict()
-        self.load_t   = AttrDict()
-        
-        
+        # Time-series dicts (e.g. { "P_MW": DataFrame with rows = time, cols = ID })
+        self.bus_t: AttrDict = AttrDict()
+        self.gen_t: AttrDict = AttrDict()
+        self.branch_t: AttrDict = AttrDict()
+        self.load_t: AttrDict = AttrDict()
+
     def __repr__(self) -> str:
         def ts_keys(d):
             return ", ".join(d.keys()) if d else "none"
@@ -53,24 +55,26 @@ class NetworkState:
             f"    └─ time-series: {ts_keys(self.load_t)}"
         )
 
-    def append_snapshot(self, component: str, timestamp: pd.Timestamp, df: pd.DataFrame):
+    def update(self, component: str, timestamp: pd.Timestamp, df: pd.DataFrame):
         """
-        Add a snapshot for a component at a given timestamp.
-        Uses df.attrs["df_type"] to determine which ID column to use.
+        Update the snapshot and time-series data for a component.
+
+        Args:
+            component: one of "bus", "gen", "branch", "load"
+            timestamp: snapshot timestamp
+            df: DataFrame with .attrs["df_type"] (e.g. "GEN", "BUS", etc.)
         """
         if df is None or df.empty:
             return
 
         # Determine ID column based on df_type
         df_type = df.attrs.get("df_type", None)
-
         id_map = {
             "BUS": "BUS_ID",
             "GEN": "GEN_ID",
             "BRANCH": "BRANCH_NAME",
             "LOAD": "BUS_NUMBER",
         }
-
         id_col = id_map.get(df_type, None)
 
         if id_col is None or id_col not in df.columns:
@@ -80,14 +84,18 @@ class NetworkState:
         df.set_index(id_col, inplace=True, drop=True)
         df = df.sort_index(axis=1)
 
+        # Set current snapshot
+        if not hasattr(self, component):
+            raise ValueError(f"No snapshot attribute for component '{component}'")
+        setattr(self, component, df)
+
+        # Update time-series
         t_attr = getattr(self, f"{component}_t", None)
         if t_attr is None:
-            raise ValueError(f"No _t attribute for component '{component}'")
+            raise ValueError(f"No time-series attribute for component '{component}'")
 
         for col in df.columns:
             series = df[col]
-
             if col not in t_attr:
                 t_attr[col] = pd.DataFrame(columns=series.index)
-
             t_attr[col].loc[timestamp] = series

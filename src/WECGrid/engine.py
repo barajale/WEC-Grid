@@ -1,35 +1,22 @@
 # src/wecgrid/engine.py
 
-from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
 import os
 import pandas as pd
+import numpy as np
+
 
 from wecgrid.database.wecgrid_db import WECGridDB
 from wecgrid.modelers import PSSEModeler, PyPSAModeler
 from wecgrid.plot import WECGridPlotter
 from wecgrid.wec import WECFarm, WECSimRunner
-from wecgrid.util import WECGridPathManager
+from wecgrid.util import WECGridPathManager, WECGridTimeManager
 
 
-@dataclass
-class SimulationTimeline:
-    """
-    Holds start time, duration, and interval frequency.
-    Lazily generates simulation snapshots as a DatetimeIndex.
-    """
-    start_time: datetime = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    sim_length: int = 288  # Number of intervals (e.g. 288 for 24h at 5-min intervals)
-    freq: str = "5T"       # Interval frequency: "5T" = 5 minutes
-
-    @property
-    def snapshots(self) -> pd.DatetimeIndex:
-        return pd.date_range(
-            start=self.start_time,
-            periods=self.sim_length,
-            freq=self.freq,
-        )
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+import pandas as pd
 
 
 class Engine:
@@ -47,7 +34,7 @@ class Engine:
         """
         self.case_file: Optional[str] = None
         self.case_name: Optional[str] = None
-        self.time = SimulationTimeline() # TODO this needs more functionality
+        self.time = WECGridTimeManager() # TODO this needs more functionality
         self.path_manager = WECGridPathManager()
         self.psse: Optional[PSSEModeler] = None
         self.pypsa: Optional[PyPSAModeler] = None
@@ -135,17 +122,69 @@ class Engine:
         if self.psse is not None:
             self.psse.add_wec_farm(wec_farm)
 
-    def generate_load_profiles(self) -> bool:
-        """
-        Generate and store synthetic load profiles for PSSE and PyPSA.
-        """
-        pass
 
-    def simulate(self, load_curve: bool = True, plot: bool = True) -> bool:
+    def generate_load_curves(self) -> pd.DataFrame:
         """
-        Run simulation across selected backends.
+        Generate synthetic load profiles using a normalized double-peak shape.
+        Returns a DataFrame indexed by time, with one column per bus.
         """
-        pass
+
+        if self.psse is None and self.pypsa is None:
+            raise ValueError("No power system modeler loaded. Use `engine.load(...)` first.")
+
+        # --- Use PSSE or PyPSA network state to get base load ---
+        if self.psse is not None:
+            base_load = (
+                self.psse.state.load[["BUS_NUMBER", "P_MW"]]
+                .drop_duplicates("BUS_NUMBER")
+                .set_index("BUS_NUMBER")["P_MW"]
+            )
+        elif self.pypsa is not None:
+            base_load = (
+                self.pypsa.network.loads[["bus", "p_set"]]
+                .groupby("bus")["p_set"]
+                .sum()
+            )
+        else:
+            raise ValueError("No valid base load could be extracted from modelers.")
+
+        # --- Create time-dependent shape (double peak) ---
+        times = pd.to_datetime(self.time.snapshots)
+        hours = times.hour + times.minute / 60.0
+
+        shape = 0.5 + 0.5 * (
+            np.exp(-0.5 * ((hours - 8) / 2) ** 2) +
+            np.exp(-0.5 * ((hours - 18) / 2) ** 2)
+        )
+
+        # --- Generate time-series DataFrame ---
+        profile = pd.DataFrame(index=self.time.snapshots)
+
+        for bus, base in base_load.items():
+            if base > 0:
+                profile[bus] = base * shape
+
+        return profile
+
+    def simulate(
+        self,
+        sim_length: Optional[int] = None,
+        load_curve: bool = False,
+        plot: bool = True
+    ) -> bool:
+        """
+        Run simulation across selected modelers (PSSE, PyPSA).
+        Optionally update simulation duration and generate load curves.
+        """
+        if sim_length:
+            self.time.update(sim_length=sim_length)
+
+        load_curve_df = self.generate_load_curves() if load_curve else None
+
+        for modeler in [self.psse, self.pypsa]:
+            if modeler is not None:
+                modeler.simulate(load_curve=load_curve_df, plot=plot)
+        return True
 
 # # src/wecgrid/engine.py
 
