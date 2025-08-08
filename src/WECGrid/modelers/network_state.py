@@ -30,13 +30,13 @@ class NetworkState:
         # Snapshot (single-time) dataframes
         self.bus: Optional[pd.DataFrame] = None
         self.gen: Optional[pd.DataFrame] = None
-        self.branch: Optional[pd.DataFrame] = None
+        self.line: Optional[pd.DataFrame] = None
         self.load: Optional[pd.DataFrame] = None
 
         # Time-series dicts (e.g. { "P_MW": DataFrame with rows = time, cols = ID })
         self.bus_t: AttrDict = AttrDict()
         self.gen_t: AttrDict = AttrDict()
-        self.branch_t: AttrDict = AttrDict()
+        self.line_t: AttrDict = AttrDict()
         self.load_t: AttrDict = AttrDict()
 
     def __repr__(self) -> str:
@@ -49,8 +49,8 @@ class NetworkState:
             f"│   └─ time-series: {ts_keys(self.bus_t)}\n"
             f"├─ gen:      {len(self.gen) if self.gen is not None else 0}\n"
             f"│   └─ time-series: {ts_keys(self.gen_t)}\n"
-            f"├─ branch:   {len(self.branch) if self.branch is not None else 0}\n"
-            f"│   └─ time-series: {ts_keys(self.branch_t)}\n"
+            f"├─ line:   {len(self.line) if self.line is not None else 0}\n"
+            f"│   └─ time-series: {ts_keys(self.line_t)}\n"
             f"└─ load:     {len(self.load) if self.load is not None else 0}\n"
             f"    └─ time-series: {ts_keys(self.load_t)}"
         )
@@ -60,9 +60,9 @@ class NetworkState:
         Update the snapshot and time-series data for a component.
 
         Args:
-            component: one of "bus", "gen", "branch", "load"
+            component: one of "bus", "gen", "line", "load"
             timestamp: snapshot timestamp
-            df: DataFrame with .attrs["df_type"] (e.g. "GEN", "BUS", etc.)
+            df: DataFrame with .attrs["df_type"] (e.g. "BUS", "GEN", etc.)
         """
         if df is None or df.empty:
             return
@@ -70,10 +70,10 @@ class NetworkState:
         # Determine ID column based on df_type
         df_type = df.attrs.get("df_type", None)
         id_map = {
-            "BUS": "BUS_ID",
-            "GEN": "GEN_ID",
-            "BRANCH": "BRANCH_NAME",
-            "LOAD": "BUS_NUMBER",
+            "BUS": "bus",
+            "GEN": "gen",
+            "LOAD": "load",
+            "LINE": "line",
         }
         id_col = id_map.get(df_type, None)
 
@@ -81,7 +81,7 @@ class NetworkState:
             raise ValueError(f"Cannot determine ID column from df_type='{df_type}'")
 
         df = df.copy()
-        df.set_index(id_col, inplace=True, drop=True)
+        df = df.set_index(pd.RangeIndex(len(df)))  # Ensure non-conflicting default index
         df = df.sort_index(axis=1)
 
         # Set current snapshot
@@ -97,5 +97,5 @@ class NetworkState:
         for col in df.columns:
             series = df[col]
             if col not in t_attr:
-                t_attr[col] = pd.DataFrame(columns=series.index)
-            t_attr[col].loc[timestamp] = series
+                t_attr[col] = pd.DataFrame(index=[], columns=range(len(series)))
+            t_attr[col].loc[timestamp] = series.values
