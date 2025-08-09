@@ -57,45 +57,56 @@ class NetworkState:
 
     def update(self, component: str, timestamp: pd.Timestamp, df: pd.DataFrame):
         """
-        Update the snapshot and time-series data for a component.
-
-        Args:
-            component: one of "bus", "gen", "line", "load"
-            timestamp: snapshot timestamp
-            df: DataFrame with .attrs["df_type"] (e.g. "BUS", "GEN", etc.)
+        Update snapshot and time-series for a component ("bus", "gen", "line", "load").
+        Expects df.attrs['df_type'] in {"BUS","GEN","LINE","LOAD"}.
         """
+
         if df is None or df.empty:
             return
 
-        # Determine ID column based on df_type
+        # --- figure out the ID column for this df_type ---
         df_type = df.attrs.get("df_type", None)
-        id_map = {
-            "BUS": "bus",
-            "GEN": "gen",
-            "LOAD": "load",
-            "LINE": "line",
-        }
-        id_col = id_map.get(df_type, None)
-
-        if id_col is None or id_col not in df.columns:
+        id_map = {"BUS": "bus", "GEN": "gen", "LINE": "line", "LOAD": "load"}
+        id_col = id_map.get(df_type)
+        if id_col is None:
             raise ValueError(f"Cannot determine ID column from df_type='{df_type}'")
 
-        df = df.copy()
-        df = df.set_index(pd.RangeIndex(len(df)))  # Ensure non-conflicting default index
-        df = df.sort_index(axis=1)
+        # --- ensure the ID is a real column and set as the index for alignment ---
+        if id_col in df.columns:
+            pass
+        elif df.index.name == id_col:
+            df = df.reset_index()
+        else:
+            raise ValueError(f"'{id_col}' not found in columns or as index for df_type='{df_type}'")
 
-        # Set current snapshot
+        df = df.copy()
+        df.set_index(id_col, inplace=True)   # now index = IDs (bus #, gen ID, etc.)
+
+        # keep snapshot (indexed by ID)
         if not hasattr(self, component):
             raise ValueError(f"No snapshot attribute for component '{component}'")
         setattr(self, component, df)
 
-        # Update time-series
+        # --- write into the time-series store ---
         t_attr = getattr(self, f"{component}_t", None)
         if t_attr is None:
             raise ValueError(f"No time-series attribute for component '{component}'")
 
-        for col in df.columns:
-            series = df[col]
-            if col not in t_attr:
-                t_attr[col] = pd.DataFrame(index=[], columns=range(len(series)))
-            t_attr[col].loc[timestamp] = series.values
+        # for each measured variable, maintain a DataFrame with:
+        #   rows    = timestamps
+        #   columns = IDs (df.index)
+        for var in df.columns:
+            series = df[var]  # index = IDs, values = this variable for this snapshot
+
+            if var not in t_attr:
+                t_attr[var] = pd.DataFrame()
+
+            tdf = t_attr[var]
+            # add any new IDs as columns
+            missing = series.index.difference(tdf.columns)
+            if len(missing) > 0:
+                tdf[missing] = pd.NA
+
+            # set the row for this timestamp, aligned by ID
+            tdf.loc[timestamp, series.index] = series.values
+            t_attr[var] = tdf

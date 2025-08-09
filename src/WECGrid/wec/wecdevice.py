@@ -10,7 +10,8 @@ class WECDevice:
     """
     name: str
     dataframe: pd.DataFrame = field(default_factory=pd.DataFrame)
-    MBASE: float = 0.1  # default base = 100 kW
+    dataframe_full: pd.DataFrame = field(default_factory=pd.DataFrame)
+    base: Optional[float] = None  # in MW
     bus_location: Optional[int] = None
     model: Optional[str] = None
     sim_id: Optional[int] = None
@@ -21,6 +22,6 @@ class WECDevice:
     ├─ model: {self.model!r}
     ├─ bus_location: {self.bus_location}
     ├─ sim_id: {self.sim_id}
-    ├─ MBASE: {self.MBASE}
+    ├─ base: {"{} MW".format(self.base)}
     └─ rows: {len(self.dataframe)}
     """

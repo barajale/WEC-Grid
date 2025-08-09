@@ -12,6 +12,8 @@ from collections import defaultdict
 
 # 3rd party
 import pandas as pd
+from tqdm import tqdm
+from collections import defaultdict
 
 # Local imports
 from .power_system_modeler import PowerSystemModeler
@@ -195,10 +197,8 @@ class PSSEModeler(PowerSystemModeler):
     def simulate(self, load_curve: Optional[pd.DataFrame] = None, plot: bool = True) -> bool:
         """Run a time-series simulation with WEC data injection."""
         
-        # if load_curve and self.engload_profiles.empty:
-        #     self.engine.generate_load_profiles()
-    
-        for snapshot in self.engine.time.snapshots: 
+
+        for snapshot in tqdm(self.engine.time.snapshots, desc="Simulating", unit="step"):
             for farm in self.engine.wec_farms:
                 power = farm.power_at_snapshot(snapshot)
                 ierr = self.psspy.machine_chng_4(
@@ -295,39 +295,77 @@ class PSSEModeler(PowerSystemModeler):
         df.attrs["df_type"] = "BUS"
         return df
 
+
+
     def snapshot_generators(self) -> pd.DataFrame:
-        """Snapshot of generator (machine) data at individual unit level, standardized to WEC-Grid schema."""
-
         ierr1, char_arr = self.psspy.amachchar(string=["ID"])
-        ierr2, int_arr = self.psspy.amachint(string=["NUMBER", "STATUS"])
+        ierr2, int_arr  = self.psspy.amachint(string=["NUMBER", "STATUS"])
         ierr3, real_arr = self.psspy.amachreal(string=["PGEN", "QGEN", "MBASE"])
-
         if any(ierr != 0 for ierr in [ierr1, ierr2, ierr3]):
             raise RuntimeError("Error fetching generator (machine) data.")
 
-        gen_ids = char_arr[0]
+        raw_ids = char_arr[0]
         bus_ids, statuses = int_arr
         pgen_mw, qgen_mvar, mbases = real_arr
 
         rows = []
-        for i in range(len(gen_ids)):
-            base = mbases[i] if mbases[i] != 0 else 100.0  # Fallback if zero
-            p_pu = pgen_mw[i] / base
-            q_pu = qgen_mvar[i] / base
+        counter = defaultdict(int)
+        for i in range(len(raw_ids)):
+            bus = bus_ids[i]
+            rid = (raw_ids[i] or "").strip() or "GEN"
+            base_key = f"{bus}_{rid}"
+            k = counter[base_key]
+            counter[base_key] += 1
+            gen_key = f"{base_key}_{k}" if k else base_key  # ensure uniqueness
 
+            base = mbases[i] or 100.0
             rows.append({
-                "gen": gen_ids[i].strip() or f"G{i}",
-                "bus": bus_ids[i],
-                "p": p_pu,
-                "q": q_pu,
-                "base": base,
+                "gen":   gen_key,
+                "bus":   bus,
+                "p":     pgen_mw[i] / base,
+                "q":     qgen_mvar[i] / base,
+                "base":  base,
                 "status": statuses[i],
             })
 
         df = pd.DataFrame(rows)
         df.attrs["df_type"] = "GEN"
-        df.index = pd.RangeIndex(start=0, stop=len(df))  # Ensure non-overlapping index
         return df
+    
+    
+    # def snapshot_generators(self) -> pd.DataFrame:
+    #     """Snapshot of generator (machine) data at individual unit level, standardized to WEC-Grid schema."""
+
+    #     ierr1, char_arr = self.psspy.amachchar(string=["ID"])
+    #     ierr2, int_arr = self.psspy.amachint(string=["NUMBER", "STATUS"])
+    #     ierr3, real_arr = self.psspy.amachreal(string=["PGEN", "QGEN", "MBASE"])
+
+    #     if any(ierr != 0 for ierr in [ierr1, ierr2, ierr3]):
+    #         raise RuntimeError("Error fetching generator (machine) data.")
+
+    #     gen_ids = char_arr[0]
+    #     bus_ids, statuses = int_arr
+    #     pgen_mw, qgen_mvar, mbases = real_arr
+
+    #     rows = []
+    #     for i in range(len(gen_ids)):
+    #         base = mbases[i] if mbases[i] != 0 else 100.0  # Fallback if zero
+    #         p_pu = pgen_mw[i] / base
+    #         q_pu = qgen_mvar[i] / base
+
+    #         rows.append({
+    #             "gen": gen_ids[i].strip() or f"G{i}",
+    #             "bus": bus_ids[i],
+    #             "p": p_pu,
+    #             "q": q_pu,
+    #             "base": base,
+    #             "status": statuses[i],
+    #         })
+
+    #     df = pd.DataFrame(rows)
+    #     df.attrs["df_type"] = "GEN"
+    #     df.index = pd.RangeIndex(start=0, stop=len(df))  # Ensure non-overlapping index
+    #     return df
     
     def snapshot_lines(self) -> pd.DataFrame:
         """Snapshot of transmission lines (branches) in standardized format."""

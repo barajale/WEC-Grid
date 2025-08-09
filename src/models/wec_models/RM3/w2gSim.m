@@ -1,6 +1,6 @@
-function [m2g_out] = w2gSim(wecId,simLength,Tsample,waveHeight,wavePeriod,waveSeed)
+function [m2g_out] = w2gSim(sim_id,simLength,Tsample,waveHeight,wavePeriod,waveSeed, model)
 % runs all the code for generating grid power from a WEC
-% wecId: ID number of the wec to run
+% sim_id: 
 % simLength: the duration to run the sim [s]
 % Tsample: the sampling period of the data to be sent to the power flow
 % solver [s]
@@ -51,7 +51,16 @@ m2g_out.Pgrid_ds = DownSampleTS(m2g_out.Pgrid,Tsample,1);
 m2g_out.Qgrid_lim_ds = DownSampleTS(m2g_out.Qgrid_lim,Tsample,1);
 
 %add wec-id to struct
-m2g_out.wecId = wecId;
+m2g_out.sim_id = sim_id;
+
+m2g_out.model = model; %add model name to output
+
+% Raw wave elevation η(t) from WEC-Sim
+m2g_out.Hs        = waves.height;     % m
+m2g_out.Tp        = waves.period;     % s
+m2g_out.seed      = waves.phaseSeed;  % int
+m2g_out.t_eta = waves.waveAmpTime(:,1);
+m2g_out.eta   = waves.waveAmpTime(:,2);
  
 
 %% Plots

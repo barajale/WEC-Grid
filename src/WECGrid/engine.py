@@ -135,14 +135,14 @@ class Engine:
         # --- Use PSSE or PyPSA network state to get base load ---
         if self.psse is not None:
             base_load = (
-                self.psse.state.load[["BUS_NUMBER", "P_MW"]]
-                .drop_duplicates("BUS_NUMBER")
-                .set_index("BUS_NUMBER")["P_MW"]
+                self.psse.state.load[["bus", "p"]]
+                .drop_duplicates("bus")
+                .set_index("bus")["p"]
             )
         elif self.pypsa is not None:
             base_load = (
-                self.pypsa.network.loads[["bus", "p_set"]]
-                .groupby("bus")["p_set"]
+                self.pypsa.network.loads[["bus", "p"]]
+                .groupby("bus")["p"]
                 .sum()
             )
         else:
@@ -171,20 +171,42 @@ class Engine:
         sim_length: Optional[int] = None,
         load_curve: bool = False,
         plot: bool = True
-    ) -> bool:
+    ) -> None:
         """
         Run simulation across selected modelers (PSSE, PyPSA).
-        Optionally update simulation duration and generate load curves.
+
+        If WEC data is present:
+        - Simulation length is capped to the WEC data length.
+        - If sim_length is given, use min(sim_length, available_len).
+        - Otherwise, use available_len.
         """
-        if sim_length:
-            self.time.update(sim_length=sim_length)
+
+        # show that if different farms have different wec durations this logic fails
+        if self.wec_farms:
+            available_len = len(self.wec_farms[0].wec_devices[0].dataframe)
+
+            if sim_length is not None:
+                if sim_length > available_len:
+                    print(f"[WARNING] Requested sim_length={sim_length} exceeds "
+                        f"WEC data length={available_len}. Truncating to {available_len}.")
+                final_len = min(sim_length, available_len)
+            else:
+                final_len = available_len
+
+            if final_len != self.time.snapshots.shape[0]:
+                self.time.update(sim_length=final_len)
+
+        else:
+            # No WEC farm — just update if sim_length is given
+            if sim_length is not None:
+                self.time.update(sim_length=sim_length)
 
         load_curve_df = self.generate_load_curves() if load_curve else None
 
         for modeler in [self.psse, self.pypsa]:
             if modeler is not None:
                 modeler.simulate(load_curve=load_curve_df, plot=plot)
-        return True
+
 
 # # src/wecgrid/engine.py
 

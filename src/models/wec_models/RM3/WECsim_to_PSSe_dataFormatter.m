@@ -1,82 +1,52 @@
-%% WEC-Sim to PSSe data formatter
-% Generate a csv file from the WEC-Sim Simulink simulation results. Must
-% run or load simulation results first.
+%% WEC-Sim → SQLite export (downsamp + full-res) using only m2g_out
 
-%Refer to PSSe Data Format Documentation, S1.10 Generator Data (pg. 15)
-%Data to be populated by W2G sim:
-% PG: set to Pgen_avg
-% QG: set to 0
-% QT: determine max Q for ACDC inverter
-% QB: determine min ""
-% VS: set to 1
-% PT: set to Pgen_avg
-% PB: set to 0? Or determine a minimum? For dynamic PF it won't be 0
-% WMOD: not directly from W2G sim, but need to determine this
-% WPF: Might need this for WMOD
+model     = string(m2g_out.model);
+sim_id    = string(m2g_out.sim_id);
+tbl_down  = "WECSIM_" + model + "_" + sim_id;
+tbl_full  = tbl_down + "_full";
 
-sim_data_struct = struct('time',0, ...
-                         'ibus',1, ...
-                         'machid','1', ...
-                         'pg',0, ...
-                         'qg',0, ...
-                         'qt',0, ...
-                         'qb',0, ...
-                         'vs',1,...
-                         'ireg',0, ...
-                         'nreg',0, ...
-                         'mbase',[], ...
-                         'zr',[], ...
-                         'zx',[], ...
-                         'rt',[], ...
-                         'xt',[], ...
-                         'gtap',[], ...
-                         'stat',[], ...
-                         'rmpct',[],...
-                         'pt',0, ...
-                         'pb',0, ...
-                         'o1',[], ...
-                         'f1',[], ...
-                         'wmod',2, ...
-                         'wpf',0.5 );
+% ---------- Downsampled table (time,p,q,base) ----------
+t_ds   = m2g_out.Pgrid_ds.Time(:);
+p_dsMW = m2g_out.Pgrid_ds.Data(:) / 1e6;   % W → MW
+q_dsMW = zeros(size(p_dsMW));
+base1  = ones(size(p_dsMW));               % 1.0 MW base
 
+T_down = table(t_ds, p_dsMW, q_dsMW, base1, ...
+    'VariableNames', {'time','p','q','base'});
 
-%determine number of entries in output file
-W2G_sample_size = length(m2g_out.Pgrid_ds.Data);
+% ---------- Full-res table (time,p,q,base,eta) ----------
+t_raw   = m2g_out.Pgrid.Time(:);
+p_rawMW = m2g_out.Pgrid.Data(:) / 1e6;
+q_rawMW = zeros(size(p_rawMW));
+base1r  = ones(size(p_rawMW));
 
-% W2G_dt = simu.dt;
-
-% W2G_data = repmat(sim_data_struct,W2G_sample_size-1,1); %minus 1 the sample size to ignore the Pgen during ramp up
-W2G_data = repmat(sim_data_struct,W2G_sample_size,1); %minus 1 the sample size to ignore the Pgen during ramp up
-
-
-%start at 2 to ignore the Pgen during ramp up
-for i = 2:W2G_sample_size
-
-    W2G_data(i).time = m2g_out.Pgrid_ds.Time(i);
-    W2G_data(i).pg = m2g_out.Pgrid_ds.Data(i)/1e6; %in MW
-    W2G_data(i).vs = 1.1;
-    W2G_data(i).pt = m2g_out.Pgrid_ds.Data(i)/1e6; %in MW
-    W2G_data(i).pb = 0/1e6; %in MW
-    W2G_data(i).qg = 0/1e6; %in Mvar
-    W2G_data(i).qt = m2g_out.Qgrid_lim_ds.Data(i)/1e6; %in Mvar
-    W2G_data(i).qb = -m2g_out.Qgrid_lim_ds.Data(i)/1e6; %in Mvar
-
+% Align eta to Pgrid time using m2g_out.t_eta / m2g_out.eta
+if isfield(m2g_out,'t_eta') && ~isempty(m2g_out.t_eta)
+    t_eta = m2g_out.t_eta(:);
+    eta   = m2g_out.eta(:);
+    if numel(t_eta) ~= numel(t_raw) || any(t_eta ~= t_raw)
+        eta_on_power = interp1(t_eta, eta, t_raw, 'linear', 'extrap');
+    else
+        eta_on_power = eta;
+    end
+else
+    warning('m2g_out.t_eta / m2g_out.eta missing; writing NaN eta.');
+    eta_on_power = nan(size(t_raw));
 end
 
-path = DB_PATH;
-dbfile = fullfile(path);
-conn = sqlite(dbfile);
-%exec(conn, strcat("DELETE FROM WEC_output"));
-%exec(conn, strcat("DROP TABLE WEC_output"));
-wec_id = m2g_out.wecId;
+T_full = table(t_raw, p_rawMW, q_rawMW, base1r, eta_on_power, ...
+    'VariableNames', {'time','p','q','base','eta'});
 
+% ---------- Write both to SQLite ----------
+dbfile = fullfile(DB_PATH);
+conn   = sqlite(dbfile);
 
-sqlquery = strcat("CREATE TABLE IF NOT EXISTS "+ "WEC_output_" +string(wec_id) +"(time FLOAT, ibus FLOAT, pg FLOAT, vs FLOAT, pt FLOAT, pb FLOAT,  qt FLOAT, qb FLOAT)");
-exec(conn, sqlquery)
-colnames = {"time","ibus","pg", "vs", "pt","pb", "qt",'qb'};
-data = struct2table(W2G_data);
-data =  data(:,["time","ibus","pg", "vs","pt","pb", "qt",'qb']);
-insert(conn, "WEC_output_" +string(wec_id), colnames, data);
-close(conn)
+exec(conn, sprintf( ...
+    "CREATE TABLE IF NOT EXISTS %s (time FLOAT, p FLOAT, q FLOAT, base FLOAT)", tbl_down));
+exec(conn, sprintf( ...
+    "CREATE TABLE IF NOT EXISTS %s (time FLOAT, p FLOAT, q FLOAT, base FLOAT, eta FLOAT)", tbl_full));
 
-%strcat("SELECT name FROM sqlite_master WHERE type='table' AND name='{WEC_output}")
+insert(conn, tbl_down, {'time','p','q','base'}, T_down);
+insert(conn, tbl_full, {'time','p','q','base','eta'}, T_full);
+
+close(conn);

@@ -46,11 +46,12 @@ class WECFarm:
         └─ sim_id: {self.sim_id}
         
     """
+    
     def _prepare_farm(self):
         """
         Attempts to pull WEC data from the database.
         """
-        table_name = f"WEC_output_{self.sim_id}"
+        table_name = f"WECSIM_{self.model.lower()}_{self.sim_id}"
         exists_query = f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'"
         result = self.database.query(exists_query)
 
@@ -62,6 +63,10 @@ class WECFarm:
         df = self.database.query(f"SELECT * FROM {table_name}", return_type="df")
         if df is None or df.empty:
             raise RuntimeError(f"[Farm] Failed to load WEC data for sim_id={self.sim_id}")
+        
+        df_full = self.database.query(f"SELECT * FROM {table_name}_full", return_type="df")
+        if df_full is None or df_full.empty:
+            raise RuntimeError(f"[Farm] Failed to load full WEC data for sim_id={self.sim_id}")
 
         # Apply time index at 5 min resolution using start time
         df["snapshots"] = pd.date_range(start=self.time.start_time, periods=df.shape[0], freq="5T")
@@ -72,7 +77,9 @@ class WECFarm:
             device = WECDevice(
                 name=name,
                 dataframe=df.copy(),
+                dataframe_full=df_full.copy(),
                 bus_location=self.bus_location,
+                base=df["base"][0],
                 model=self.model,
                 sim_id=self.sim_id
             )
@@ -98,7 +105,7 @@ class WECFarm:
                 and not device.dataframe.empty 
                 and timestamp in device.dataframe.index
             ):
-                power = device.dataframe.at[timestamp, "pg"]
+                power = device.dataframe.at[timestamp, "p"]
                 total_power += power
             else:
                 print(f"[WARNING] Missing data for {device.name} at {timestamp}")
