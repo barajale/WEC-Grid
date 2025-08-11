@@ -1,0 +1,31 @@
+site_name: WEC-Grid
+site_description: Integrating Wave Energy Converter Models into Power System Simulations
+repo_url: https://github.com/acep/WEC-GRID
+theme:
+  name: darkly
+  features:
+    - navigation.sections
+    - navigation.expand
+    - toc.integrate
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]   # points to your code
+nav:
+  - Home: index.md
+  - Install: install.md
+  - Quickstart: quickstart.md
+  - User Guide:
+      - Engine: engine.md
+      - Modelers (overview): modelers.md
+      - PSS®E: psse.md
+      - PyPSA: pypsa.md
+      - WEC devices: wec.md
+      - WEC-SIM runner: wecsim.md
+      - Data & Models: data-models.md
+      - Database: database.md
+      - Plotting: plotting.md
+      - Troubleshooting: troubleshooting.md
+  - Examples: examples.md

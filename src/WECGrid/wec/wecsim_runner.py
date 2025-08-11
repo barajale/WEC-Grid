@@ -9,7 +9,8 @@ import matlab.engine
 import matplotlib.pyplot as plt
 from typing import Optional, Dict, Any
 from wecgrid.database.wecgrid_db import WECGridDB
-from wecgrid.util.wecgrid_pathmanager import WECGridPathManager
+#from wecgrid.util.wecgrid_pathmanager import WECGridPathManager
+from wecgrid.util.resources import resolve_wec_model
 
 
 # Inside wecsim_runner.py (at the top)
@@ -17,7 +18,7 @@ from dataclasses import dataclass
 
 
 class WECSimRunner:
-    def __init__(self, database: WECGridDB, path_manager: WECGridPathManager):
+    def __init__(self, database: WECGridDB):
         """
         Args:
             wec_model_path: Path to root folder of all WEC models
@@ -25,9 +26,16 @@ class WECSimRunner:
             db: An instance of WECGridDB for executing DB operations
         """
 
-        self.path_manager: WECGridPathManager = path_manager
+        #self.path_manager: WECGridPathManager = path_manager
+        self.wec_sim_path: Optional[str] = None
         self.database: WECGridDB = database
         self.matlab_engine: Optional[matlab.engine.MatlabEngine] = None
+    
+    def set_wec_sim_path(self, path: str) -> None:
+        self.wec_sim_path = path
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"WEC-SIM path does not exist: {path}")
+        
 
 
     def start_matlab(self) -> bool:
@@ -39,7 +47,9 @@ class WECSimRunner:
             self.matlab_engine = matlab.engine.start_matlab()
 
             # Get and validate WEC-SIM path
-            wec_sim_path = self.path_manager.wec_sim
+            if self.wec_sim_path is None:
+                raise ValueError("WEC-SIM path is not configured. Please set it using set_wec_sim_path()")
+            wec_sim_path = self.wec_sim_path
             if wec_sim_path is None:
                 raise ValueError("WEC-SIM path is not configured.")
             
@@ -100,7 +110,7 @@ class WECSimRunner:
         self,
         sim_id: int,
         model: str,
-        sim_length_secs: int = 3600 * 12, # 12 hours
+        sim_length_secs: int = 3600 * 24, # 24 hours
         tsample: float = 300,
         wave_height: float = 2.5,
         wave_period: float = 8.0,
@@ -124,14 +134,16 @@ class WECSimRunner:
         #TODO some sorta sim progress bar would be cool? 
         
         try:
+            model_dir = resolve_wec_model(model)  # accepts name or path
+            
             if self.start_matlab():
                 table_name = f"WECSIM_{model.lower()}_{sim_id}"
                 with self.database.connection() as conn:
                     conn.cursor().execute(f"DROP TABLE IF EXISTS {table_name};")
 
                 print("Starting WEC-SIM simulation...")
-                model_dir = os.path.join(self.path_manager.wec_models, model)
-                self.matlab_engine.cd(model_dir)
+                #model_dir = os.path.join(self.path_manager.wec_models, model)
+                self.matlab_engine.cd(str(model_dir))
 
                 # Set simulation parameters in MATLAB workspace
                 self.matlab_engine.workspace["sim_id"] = sim_id

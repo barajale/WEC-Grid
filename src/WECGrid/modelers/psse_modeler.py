@@ -50,7 +50,7 @@ class PSSEModeler(PowerSystemModeler):
         
     def init_api(self) -> bool:
         """Initialize the PSS®E environment and load the case."""
-        Debug = True  # Set to True for debugging output
+        Debug = False  # Set to True for debugging output
         try:
             with silence_stdout():
                 import pssepath # TODO double check this works, conda work around might not be needed

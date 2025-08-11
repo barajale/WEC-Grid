@@ -6,18 +6,25 @@ import os
 import pandas as pd
 import numpy as np
 
+from pathlib import Path
+
+from typing import Union
+
 
 from wecgrid.database.wecgrid_db import WECGridDB
 from wecgrid.modelers import PSSEModeler, PyPSAModeler
 from wecgrid.plot import WECGridPlotter
 from wecgrid.wec import WECFarm, WECSimRunner
-from wecgrid.util import WECGridPathManager, WECGridTimeManager
+from wecgrid.util import WECGridTimeManager
+from wecgrid.util.resources import resolve_grid_case
 
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import pandas as pd
 
+
+#TODO figure out wec-sim source "wec_sim": "C:/Users/alexb/research/WEC-Sim",
 
 class Engine:
     #TODO name it WECGridEngine? think on it 
@@ -35,42 +42,24 @@ class Engine:
         self.case_file: Optional[str] = None
         self.case_name: Optional[str] = None
         self.time = WECGridTimeManager() # TODO this needs more functionality
-        self.path_manager = WECGridPathManager()
+        #self.path_manager = WECGridPathManager()
         self.psse: Optional[PSSEModeler] = None
         self.pypsa: Optional[PyPSAModeler] = None
         self.wec_farms: List[WECFarm] = []
         self.database = WECGridDB()
         self.plot = WECGridPlotter(self)
-        self.wec_sim: WECSimRunner = WECSimRunner(self.database, self.path_manager)
-    
-        
-    
+        self.wec_sim: WECSimRunner = WECSimRunner(self.database)
+
+
     def case(self, case_file: str):
         """
-        Set the power system case for the simulation.
-        
-        Args:
-            case_file: Either a full path to a .RAW file or a key in the PathManager (e.g., 'IEEE30').
+        case_file: a local path to a .RAW, or the stem/filename of a bundled case
+                (e.g., 'IEEE_30_bus' or 'IEEE_30_bus.RAW').
         """
-        # Try to resolve using PathManager first
-        try:
-            resolved_path = self.path_manager.get_path(case_file)
-            if os.path.isfile(resolved_path):
-                case_file = resolved_path
-        except ValueError:
-            # If not a known key, assume it’s a direct path
-            pass
-
-        if not os.path.isfile(case_file):
-            raise FileNotFoundError(f"PSS®E RAW not found: {case_file}")
-
-        self.case_file = case_file
-        self.case_name = (
-            os.path.splitext(os.path.basename(case_file))[0]
-            .replace("_", " ")
-            .replace("-", " ")
-        )
-        
+        path = resolve_grid_case(case_file)
+        self.case_file = str(path)
+        self.case_name = Path(path).stem.replace("_", " ").replace("-", " ")
+            
 
     def load(self, software: List[str]) -> None:
         """

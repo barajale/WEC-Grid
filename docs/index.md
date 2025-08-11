@@ -1,19 +1,79 @@
+# WEC-Grid
+
+**WEC-Grid** is a Python package for integrating **Wave Energy Converter (WEC)** models with power system simulation tools such as **PSS®E** and **PyPSA**.  
+It supports hydrodynamic WEC modeling via **WEC-Sim**, standardized data handling, visualization, and reproducible simulation workflows.
+
 ---
-layout: default
-title: Home
+
+## Features
+
+- **Multi-platform grid simulation** — works with PSS®E and PyPSA.
+- **Hydrodynamic modeling** with MATLAB-based WEC-Sim.
+- **Standardized data APIs** for bus, generator, and load data.
+- **Built-in example models** — IEEE test systems and RM3 WEC model.
+- **Integrated database support** for simulation results.
+- **Visualization tools** for time series and network plots.
+
 ---
 
-# Welcome to WEC-Grid
+## Installation
 
-WEC-Grid is a modular simulation framework designed to integrate wave energy converters (WECs) with power system simulation tools.
+```bash
+git clone https://github.com/acep-uaf/WEC-GRID.git
+cd WEC-GRID
+pip install -e .
+```
 
-## Components
+Python 3.7 is required.
 
-- [WECGridEngine](engine.html): Core engine that manages the simulation loop and coordinates all modules.
-- [PSS®E Wrapper](psse.html): Interface for running simulations using the PSS®E solver.
-- [PyPSA Wrapper](pypsa.html): Interface for building and analyzing networks using PyPSA.
-- [WEC-SIM Wrapper](wec.html): Module for handling WEC simulations using MATLAB and WEC-SIM.
+---
 
-## Get Started
+## Quick Start
 
-To get started, visit the [Engine documentation](engine.html) or explore any of the modules above.
+```python
+import wecgrid
+
+# Initialize
+engine = wecgrid.Engine()
+
+# Load an example IEEE 30-bus case
+engine.case("IEEE_30_bus")
+
+# Load grid modelers
+engine.load(["psse", "pypsa"])
+```
+
+---
+
+## API Documentation
+
+The API documentation is generated directly from the codebase using `mkdocstrings`.  
+Click on the sections below to explore:
+
+- [Engine](engine.md)
+- [PSS®E Modeler](psse.md)
+- [PyPSA Modeler](pypsa.md)
+- [WEC System](wec.md)
+
+---
+
+## Citation
+
+If you use **WEC-Grid** in academic work, please cite:
+
+```bibtex
+@software{wecgrid,
+  author       = {Alexander Barajas-Ritchie},
+  title        = {WEC-Grid: A tool for integrating Wave Energy Converter models into power system simulations},
+  url          = {https://github.com/acep-uaf/WEC-GRID},
+  version      = {0.1.0},
+  year         = {2025},
+  license      = {MIT}
+}
+```
+
+---
+
+## License
+
+MIT License — see [LICENSE](../LICENSE) for details.
