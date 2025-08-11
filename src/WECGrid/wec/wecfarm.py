@@ -9,7 +9,7 @@ from .wecsim_runner import WECSimRunner
 
 
 class WECFarm:
-    def __init__(self, farm_name: str, database, time: Any, sim_id: int, model: str, bus_location: int, connecting_bus: int = 1, size: int = 1):
+    def __init__(self, farm_name: str, database, time: Any, sim_id: int, model: str, bus_location: int, connecting_bus: int = 1, size: int = 1, gen_id: str = None):
         """
         Represents a collection of WEC devices sharing the same model and connection bus.
 
@@ -28,11 +28,11 @@ class WECFarm:
         self.model: str = model
         self.bus_location: int = bus_location
         self.connecting_bus: int = connecting_bus # todo this should default to swing bus
-        self.gen_id: str = f"W{size}"
+        self.gen_id: str = gen_id
         self.size: int = size
         self.config: Dict = None
         self.wec_devices: List[WECDevice] = []
-        self.MBASE: float = 0.1  # default base = 100 kW
+        self.BASE: float = 100.0  # this should be the base of the wec, which is usually 100 MVA
 
         self._prepare_farm()
 
@@ -44,7 +44,9 @@ class WECFarm:
         ├─ bus_location: {self.bus_location}
         ├─ connecting_bus: {self.connecting_bus}
         └─ sim_id: {self.sim_id}
-        
+
+        Base: {self.BASE} MVA
+
     """
     
     def _prepare_farm(self):
@@ -72,6 +74,8 @@ class WECFarm:
         df["snapshots"] = pd.date_range(start=self.time.start_time, periods=df.shape[0], freq="5T")
         df.set_index("snapshots", inplace=True) 
 
+        self.BASE = df["base"][0]
+        
         for i in range(self.size):
             name = f"{self.model}_{self.sim_id}_{i}"
             device = WECDevice(

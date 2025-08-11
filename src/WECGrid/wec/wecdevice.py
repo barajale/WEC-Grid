@@ -11,7 +11,7 @@ class WECDevice:
     name: str
     dataframe: pd.DataFrame = field(default_factory=pd.DataFrame)
     dataframe_full: pd.DataFrame = field(default_factory=pd.DataFrame)
-    base: Optional[float] = None  # in MW
+    base: Optional[float] = None  # 100 MVA probably
     bus_location: Optional[int] = None
     model: Optional[str] = None
     sim_id: Optional[int] = None
@@ -22,6 +22,6 @@ class WECDevice:
     ├─ model: {self.model!r}
     ├─ bus_location: {self.bus_location}
     ├─ sim_id: {self.sim_id}
-    ├─ base: {"{} MW".format(self.base)}
+    ├─ base: {"{} MVA".format(self.base)}
     └─ rows: {len(self.dataframe)}
     """

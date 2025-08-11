@@ -1,4 +1,4 @@
-# src/wecgrid/modelers/network_state.py
+# src/wecgrid/modelers/grid_state.py
 
 import pandas as pd
 from typing import Optional, Dict
@@ -17,7 +17,7 @@ class AttrDict(dict):
         self[name] = value
 
 
-class NetworkState:
+class GridState:
     """
     Standardized container for power system snapshot and time-series data.
 
@@ -27,11 +27,14 @@ class NetworkState:
     """
 
     def __init__(self):
+        # Empty DataFrames with appropriate dtypes — index will be set on first update
+        empty_df = pd.DataFrame()
+
         # Snapshot (single-time) dataframes
-        self.bus: Optional[pd.DataFrame] = None
-        self.gen: Optional[pd.DataFrame] = None
-        self.line: Optional[pd.DataFrame] = None
-        self.load: Optional[pd.DataFrame] = None
+        self.bus: pd.DataFrame = empty_df.copy()
+        self.gen: pd.DataFrame = empty_df.copy()
+        self.line: pd.DataFrame = empty_df.copy()
+        self.load: pd.DataFrame = empty_df.copy()
 
         # Time-series dicts (e.g. { "P_MW": DataFrame with rows = time, cols = ID })
         self.bus_t: AttrDict = AttrDict()
@@ -44,14 +47,14 @@ class NetworkState:
             return ", ".join(d.keys()) if d else "none"
 
         return (
-            "NetworkState:\n"
-            f"├─ bus:      {len(self.bus) if self.bus is not None else 0}\n"
+            "GridState:\n"
+            f"├─ bus:   {len(self.bus)}\n"
             f"│   └─ time-series: {ts_keys(self.bus_t)}\n"
-            f"├─ gen:      {len(self.gen) if self.gen is not None else 0}\n"
+            f"├─ gen:   {len(self.gen)}\n"
             f"│   └─ time-series: {ts_keys(self.gen_t)}\n"
-            f"├─ line:   {len(self.line) if self.line is not None else 0}\n"
+            f"├─ line:  {len(self.line)}\n"
             f"│   └─ time-series: {ts_keys(self.line_t)}\n"
-            f"└─ load:     {len(self.load) if self.load is not None else 0}\n"
+            f"└─ load:  {len(self.load)}\n"
             f"    └─ time-series: {ts_keys(self.load_t)}"
         )
 

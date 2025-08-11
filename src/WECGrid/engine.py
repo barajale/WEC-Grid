@@ -1,7 +1,7 @@
 # src/wecgrid/engine.py
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 import os
 import pandas as pd
 import numpy as np
@@ -87,7 +87,7 @@ class Engine:
                 #TODO: check if error is thrown if init fails
             elif name == "pypsa":
                 self.pypsa = PyPSAModeler(self)
-                #self.pypsa.init_api()
+                self.pypsa.init_api()
                 # if self.psse is not None:
                 #     self.psse.adjust_reactive_lim()
                 #TODO: check if error is thrown if init fails
@@ -115,56 +115,132 @@ class Engine:
             bus_location=bus_location, 
             connecting_bus=connecting_bus,
             size=size,
+            gen_id=f"W{len(self.wec_farms) + 1}"  # Unique gen_id for each farm,
+            #TODO potenital issue where PSSE is using gen_id as the gen identifer and that's limited to 2 chars. so hard cap at 9 farms in this code rn 
             
         )
         self.wec_farms.append(wec_farm)
         
-        if self.psse is not None:
-            self.psse.add_wec_farm(wec_farm)
+        for modeler in [self.psse, self.pypsa]:
+                if modeler is not None:
+                    modeler.add_wec_farm(wec_farm)
 
 
-    def generate_load_curves(self) -> pd.DataFrame:
-        """
-        Generate synthetic load profiles using a normalized double-peak shape.
-        Returns a DataFrame indexed by time, with one column per bus.
-        """
+    def generate_load_curves(
+            self,
+            morning_peak_hour: float = 8.0,
+            evening_peak_hour: float = 18.0,
+            morning_sigma_h: float = 2.0,
+            evening_sigma_h: float = 3.0,
+            amplitude: float = 0.30,   # ±30% swing around mean
+            min_multiplier: float = 0.70,  # floor/ceiling clamp
+            amp_overrides: Optional[Dict[int, float]]  = None,
+        ) -> pd.DataFrame:
+            """
+            Build per-bus load time series (in pu) over self.time.snapshots.
+            - Base values come from *.grid.loads (PSSE) or network.loads (PyPSA), summed per bus.
+            - Uses a normalized two-peak shape for normal windows; flat for short windows (<6h).
+            """
+            import numpy as np
+            import pandas as pd
 
-        if self.psse is None and self.pypsa is None:
-            raise ValueError("No power system modeler loaded. Use `engine.load(...)` first.")
+            if self.psse is None and self.pypsa is None:
+                raise ValueError("No power system modeler loaded. Use `engine.load(...)` first.")
+            
+                        # --- Use PSSE or PyPSA Grid state to get base load ---
+            if self.psse is not None:
+                base_load = (
+                    self.psse.grid.load[["bus", "p"]]
+                    .drop_duplicates("bus")
+                    .set_index("bus")["p"]
+                )
+            elif self.pypsa is not None:
+                base_load = (
+                    self.pypsa.network.loads[["bus", "p"]]
+                    .groupby("bus")["p"]
+                    .sum()
+                )
+            else:
+                raise ValueError("No valid base load could be extracted from modelers.")
 
-        # --- Use PSSE or PyPSA network state to get base load ---
-        if self.psse is not None:
-            base_load = (
-                self.psse.state.load[["bus", "p"]]
-                .drop_duplicates("bus")
-                .set_index("bus")["p"]
-            )
-        elif self.pypsa is not None:
-            base_load = (
-                self.pypsa.network.loads[["bus", "p"]]
-                .groupby("bus")["p"]
-                .sum()
-            )
-        else:
-            raise ValueError("No valid base load could be extracted from modelers.")
+                
+            snaps = pd.to_datetime(self.time.snapshots)
+            prof = pd.DataFrame(index=snaps)
 
-        # --- Create time-dependent shape (double peak) ---
-        times = pd.to_datetime(self.time.snapshots)
-        hours = times.hour + times.minute / 60.0
+            # make sure this is a plain ndarray, not a Float64Index
+            hours = (snaps.hour.values
+                    + snaps.minute.values/60.0
+                    + snaps.second.values/3600.0)
 
-        shape = 0.5 + 0.5 * (
-            np.exp(-0.5 * ((hours - 8) / 2) ** 2) +
-            np.exp(-0.5 * ((hours - 18) / 2) ** 2)
-        )
+            dur_sec = 0 if len(snaps) < 2 else (snaps.max() - snaps.min()).total_seconds()
 
-        # --- Generate time-series DataFrame ---
-        profile = pd.DataFrame(index=self.time.snapshots)
+            if dur_sec < 6*3600:
+                z = np.zeros_like(hours, dtype=float)
+            else:
+                def g(h, mu, sig):
+                    h = np.asarray(h, dtype=float)      # <-- belt-and-suspenders
+                    return np.exp(-0.5 * ((h - mu)/sig)**2)
 
-        for bus, base in base_load.items():
-            if base > 0:
-                profile[bus] = base * shape
+                s = g(hours, morning_peak_hour, morning_sigma_h) + g(hours, evening_peak_hour, evening_sigma_h)
+                s = np.asarray(s, dtype=float)
+                z = (s - s.mean()) / (s.std() + 1e-12)  # or: z = (s - np.mean(s)) / (np.std(s) + 1e-12)
 
-        return profile
+            amp_overrides = {} if amp_overrides is None else {int(k): float(v) for k, v in amp_overrides.items()}
+
+            for bus, p_base in base_load.items():
+                if p_base <= 0: 
+                    continue
+                a = amp_overrides.get(int(bus), amplitude)   # per-bus amplitude
+                shape_bus = 1.0 + a * z
+                shape_bus = np.clip(shape_bus, min_multiplier, 2.0 - min_multiplier)
+                prof[int(bus)] = p_base * shape_bus
+
+            prof.index.name = "time"
+            return prof
+
+    # def generate_load_curves(self) -> pd.DataFrame:
+    #     """
+    #     Generate synthetic load profiles using a normalized double-peak shape.
+    #     Returns a DataFrame indexed by time, with one column per bus.
+    #     """
+    #     #TODO the double peaks should be time dependedent, need to avoid applying a double peak to a  2hour sim 
+
+    #     if self.psse is None and self.pypsa is None:
+    #         raise ValueError("No power system modeler loaded. Use `engine.load(...)` first.")
+
+    #     # --- Use PSSE or PyPSA Grid state to get base load ---
+    #     if self.psse is not None:
+    #         base_load = (
+    #             self.psse.grid.load[["bus", "p"]]
+    #             .drop_duplicates("bus")
+    #             .set_index("bus")["p"]
+    #         )
+    #     elif self.pypsa is not None:
+    #         base_load = (
+    #             self.pypsa.network.loads[["bus", "p"]]
+    #             .groupby("bus")["p"]
+    #             .sum()
+    #         )
+    #     else:
+    #         raise ValueError("No valid base load could be extracted from modelers.")
+
+    #     # --- Create time-dependent shape (double peak) ---
+    #     times = pd.to_datetime(self.time.snapshots)
+    #     hours = times.hour + times.minute / 60.0
+
+    #     shape = 0.5 + 0.5 * (
+    #         np.exp(-0.5 * ((hours - 8) / 2) ** 2) +
+    #         np.exp(-0.5 * ((hours - 18) / 2) ** 2)
+    #     )
+
+    #     # --- Generate time-series DataFrame ---
+    #     profile = pd.DataFrame(index=self.time.snapshots)
+
+    #     for bus, base in base_load.items():
+    #         if base > 0:
+    #             profile[bus] = base * shape
+
+    #     return profile
 
     def simulate(
         self,
@@ -201,11 +277,12 @@ class Engine:
             if sim_length is not None:
                 self.time.update(sim_length=sim_length)
 
-        load_curve_df = self.generate_load_curves() if load_curve else None
+        load_curve_df = self.generate_load_curves(amplitude=0.10) if load_curve else None
 
         for modeler in [self.psse, self.pypsa]:
             if modeler is not None:
-                modeler.simulate(load_curve=load_curve_df, plot=plot)
+                modeler.simulate(load_curve=load_curve_df)
+                # todo if plot then plot
 
 
 # # src/wecgrid/engine.py
