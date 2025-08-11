@@ -182,13 +182,13 @@ class PSSEModeler(PowerSystemModeler):
         
         ierr = self.psspy.machine_data_4(
             ibus=farm.bus_location, 
-            id = farm.gen_id, # maybe should just be a number? come back
+            id = f"W{farm.id}", # maybe should just be a number? come back
             realar1= 0.0, # PG, machine active power (0.0 by default)
         )
 
         if ierr > 0:
             print(
-                f"Error adding generator {farm.gen_id} to bus {farm.bus_location}. PSS®E error code: {ierr}"
+                f"Error adding generator {farm.id} to bus {farm.bus_location}. PSS®E error code: {ierr}"
             )
             return False
 
@@ -226,7 +226,7 @@ class PSSEModeler(PowerSystemModeler):
                 power = farm.power_at_snapshot(snapshot) # pu in MW (1.0 MVA)
                 ierr = self.psspy.machine_chng_4(
                         ibus=farm.bus_location, 
-                        id=farm.gen_id, 
+                        id=f"W{farm.id}", 
                         realar=[power * farm.BASE] + [self._f]*16) > 0 # no need to use Farm.BASE becuase base was passed in add_wec_farm
                 if ierr > 0: 
                     raise Exception(f"Error setting generator power at snapshot {snapshot}")

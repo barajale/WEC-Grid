@@ -104,9 +104,9 @@ class Engine:
             bus_location=bus_location, 
             connecting_bus=connecting_bus,
             size=size,
-            gen_id=f"W{len(self.wec_farms) + 1}"  # Unique gen_id for each farm,
-            #TODO potenital issue where PSSE is using gen_id as the gen identifer and that's limited to 2 chars. so hard cap at 9 farms in this code rn 
-            
+            gen_id= len(self.wec_farms) + 1,  # Unique gen_id for each farm,
+            #TODO potenital issue where PSSE is using gen_id as the gen identifer and that's limited to 2 chars. so hard cap at 9 farms in this code rn
+
         )
         self.wec_farms.append(wec_farm)
         

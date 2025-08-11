@@ -317,7 +317,7 @@ class PyPSAModeler(PowerSystemModeler):
                 s_nom=130.00,
             )
             self.network.add("Generator",
-                name=str(farm.gen_id),
+                name=f"W{farm.id}",
                 bus=str(farm.bus_location),
                 carrier="wave",
                 p_set=0.0,
@@ -345,7 +345,7 @@ class PyPSAModeler(PowerSystemModeler):
             for farm in self.engine.wec_farms:
                 power = farm.power_at_snapshot(snapshot) * farm.BASE  # pu (1.0 MVA ) -> MW 
                 # write to the DataFrame, not the Series view
-                self.network.generators.at[farm.gen_id, "p_set"] = power
+                self.network.generators.at[f"W{farm.id}", "p_set"] = power
 
             # Loads
             if load_curve is not None:

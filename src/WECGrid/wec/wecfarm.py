@@ -28,7 +28,7 @@ class WECFarm:
         self.model: str = model
         self.bus_location: int = bus_location
         self.connecting_bus: int = connecting_bus # todo this should default to swing bus
-        self.gen_id: str = gen_id
+        self.id: str = gen_id
         self.size: int = size
         self.config: Dict = None
         self.wec_devices: List[WECDevice] = []
