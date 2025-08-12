@@ -338,7 +338,7 @@ class PSSEModeler(PowerSystemModeler):
             q_pu = (qgen_b - qload_b) / self.sbase
 
             rows.append({
-                "bus":       bus,
+                "bus":       bus, # todo figure out int of str
                 "bus_name":  name,
                 "type":      type_map.get(bus_types[i], f"Unknown({bus_types[i]})"),
                 "p":         p_pu,

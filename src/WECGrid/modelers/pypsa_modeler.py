@@ -309,7 +309,7 @@ class PyPSAModeler(PowerSystemModeler):
                 carrier="AC",
             )
             self.network.add("Line",
-                name="WEC Line",
+                name=f"WEC Line {farm.bus_location}", # todo updat this to follow convention
                 bus0=str(farm.bus_location),
                 bus1=str(farm.connecting_bus),
                 r=7.875648,
@@ -398,7 +398,7 @@ class PyPSAModeler(PowerSystemModeler):
             vang_rad = pd.Series(0.0, index=idx)
 
         df = pd.DataFrame({
-            "bus":       buses.index.astype(str),
+            "bus":       buses.index.astype(int),
             "bus_name":  buses.index.astype(str),
             "type":      buses.get("control", pd.Series("PQ", index=buses.index)).fillna("PQ"),
             # per-unit on system base:

@@ -266,133 +266,125 @@ class WECGridPlotter:
         return fig, axes
 
 
-    def plot_wec_analysis(self, software="psse", figsize=(16, 12)):
-        """Comprehensive WEC analysis plotting"""
+    def plot_wec_analysis(self, software="psse", figsize=(12, 15)):
+        """Comprehensive WEC analysis plotting - 3 rows, 1 column"""
         if not hasattr(self.engine, 'wec_farms') or not self.engine.wec_farms:
             print("No WEC farms found in engine")
             return None, None
         
-        # Create a figure with 6 subplots (2x3 grid)
-        fig, axes = plt.subplots(2, 3, figsize=figsize)
-        axes = axes.flatten()
+        # Create a figure with 3 subplots (3x1 grid)
+        fig, axes = plt.subplots(3, 1, figsize=figsize)
         
         try:
-            # Get WEC generator names from all farms using farm.id and farm.bus_location
-            wec_gen_names = []
-            for farm in self.engine.wec_farms:
-                if hasattr(farm, 'id') and hasattr(farm, 'bus_location'):
-                    wec_gen_name = f"{farm.bus_location}_{farm.id}"
-                    wec_gen_names.append(wec_gen_name)
-            
-            print(f"Looking for WEC generators: {wec_gen_names}")
-            
             # Get grid data
             grid_obj = getattr(self.engine, software).grid
             gen_data = getattr(grid_obj, 'gen_t')
+            bus_data = getattr(grid_obj, 'bus_t')
             
-            # Plot 1: WEC Active Power Output
-            if wec_gen_names:
-                p_data = getattr(gen_data, 'p')
+            # Collect WEC farm information
+            wec_farm_info = []
+            for farm in self.engine.wec_farms:
+                if hasattr(farm, 'id') and hasattr(farm, 'bus_location') and hasattr(farm, 'farm_name'):
+                    wec_gen_name = f"{farm.bus_location}_{farm.id}"
+                    wec_farm_info.append({
+                        'gen_name': wec_gen_name,
+                        'bus_location': farm.bus_location,
+                        'farm_name': farm.farm_name
+                    })
+            
+            print(f"Found {len(wec_farm_info)} WEC farms:")
+            for info in wec_farm_info:
+                print(f"  - {info['farm_name']}: {info['gen_name']} at bus {info['bus_location']}")
+            
+            # Plot 1: WEC-Farm Active Power Output
+            p_data = getattr(gen_data, 'p')
+            wec_generators = [info['gen_name'] for info in wec_farm_info]
+            available_wec_gens = [gen for gen in wec_generators if gen in p_data.columns]
+            
+            if available_wec_gens:
+                wec_p_data = p_data[available_wec_gens]
                 
-                # Filter for WEC generators only
-                available_wecs = [wec for wec in wec_gen_names if wec in p_data.columns]
-                print(f"Available WEC generators in data: {available_wecs}")
+                # Create labels using farm names
+                plot_data = wec_p_data.copy()
+                # Rename columns to use farm names instead of generator IDs
+                column_mapping = {}
+                for info in wec_farm_info:
+                    if info['gen_name'] in plot_data.columns:
+                        column_mapping[info['gen_name']] = info['farm_name']
+                plot_data.rename(columns=column_mapping, inplace=True)
                 
-                if available_wecs:
-                    wec_p_data = p_data[available_wecs]
-                    wec_p_data.plot(ax=axes[0], title="WEC Active Power Output", linewidth=2)
-                    axes[0].set_ylabel("Active Power (MW)")
-                    axes[0].grid(True, alpha=0.3)
-                    axes[0].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-                else:
-                    axes[0].text(0.5, 0.5, "No WEC generators\nfound in data", 
+                plot_data.plot(ax=axes[0], linewidth=2, title="WEC-Farm Active Power Output")
+                axes[0].set_ylabel("Active Power (MW)")
+                axes[0].grid(True, alpha=0.3)
+                if len(available_wec_gens) > 1:
+                    axes[0].legend(loc='upper right')
+            else:
+                axes[0].text(0.5, 0.5, "No WEC farm generators\nfound in data", 
                             ha='center', va='center', transform=axes[0].transAxes)
-            
-            # Plot 2: WEC Reactive Power Output
-            if wec_gen_names and available_wecs:
-                q_data = getattr(gen_data, 'q')
-                available_wecs_q = [wec for wec in wec_gen_names if wec in q_data.columns]
-                if available_wecs_q:
-                    wec_q_data = q_data[available_wecs_q]
-                    wec_q_data.plot(ax=axes[1], title="WEC Reactive Power Output", linewidth=2)
-                    axes[1].set_ylabel("Reactive Power (MVAr)")
-                    axes[1].grid(True, alpha=0.3)
-                    axes[1].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-            
-            # Plot 3: Bus voltage at WEC location
-            # each farm can be at a different bus, we can get the bus location for each bus by doing farm.bus_location
-            wec_bus = getattr(self.engine.wec_farms[0], 'bus_location', None)
-            if wec_bus:
-                bus_data = getattr(grid_obj, 'bus_t')
-                v_data = getattr(bus_data, 'v_mag')
-                if str(wec_bus) in v_data.columns:
-                    v_data[str(wec_bus)].plot(ax=axes[2], title=f"Voltage at WEC Bus {wec_bus}", linewidth=2)
-                    axes[2].set_ylabel("Voltage (p.u.)")
-                    axes[2].grid(True, alpha=0.3)
-                else:
-                    axes[2].text(0.5, 0.5, f"Bus {wec_bus} not found\nin voltage data", 
-                            ha='center', va='center', transform=axes[2].transAxes)
-            
-            # Plot 4: Total WEC Power vs Total Grid Generation
-            if wec_gen_names and available_wecs:
-                p_data = getattr(gen_data, 'p')
-                wec_p_data = p_data[available_wecs]
+                axes[0].set_title("WEC-Farm Active Power Output")
+                
+            # Plot 2: WEC Contribution Percentage over Time
+            if available_wec_gens:
+                wec_p_data = p_data[available_wec_gens]
                 total_wec_power = wec_p_data.sum(axis=1)
                 total_gen_power = p_data.sum(axis=1)
                 
-                axes[3].plot(total_wec_power.index, total_wec_power.values, 
-                            label="Total WEC Power", linewidth=2)
-                axes[3].plot(total_gen_power.index, total_gen_power.values, 
-                            label="Total Grid Generation", linewidth=2)
-                axes[3].set_title("WEC vs Total Generation")
-                axes[3].set_ylabel("Active Power (MW)")
-                axes[3].legend()
-                axes[3].grid(True, alpha=0.3)
+                # Calculate WEC percentage of total generation
+                wec_percentage = (total_wec_power / total_gen_power) * 100
+                
+                axes[1].plot(wec_percentage.index, wec_percentage.values, 
+                            label="WEC Contribution %", linewidth=2, color='green')
+                axes[1].set_title("WEC-Farm Contribution to Total Generation (%)")
+                axes[1].set_ylabel("Percentage (%)")
+                axes[1].legend()
+                axes[1].grid(True, alpha=0.3)
+                
+                # Plot 3: WEC-Farm Bus Voltage
+                v_data = getattr(bus_data, 'v_mag')
+                wec_buses = [info['bus_location'] for info in wec_farm_info]
+                available_wec_buses = [bus for bus in wec_buses if bus in v_data.columns]
             
-            # Plot 5: WEC Power Factor (if available)
-            try:
-                if wec_gen_names and available_wecs:
-                    p_data = getattr(gen_data, 'p')
-                    q_data = getattr(gen_data, 'q')
-                    wec_p_data = p_data[available_wecs]
-                    wec_q_data = q_data[available_wecs]
-                    
-                    # Calculate power factor: P / sqrt(P^2 + Q^2)
-                    wec_pf = wec_p_data / (wec_p_data**2 + wec_q_data**2)**0.5
-                    wec_pf.plot(ax=axes[4], title="WEC Power Factor", linewidth=2)
-                    axes[4].set_ylabel("Power Factor")
-                    axes[4].grid(True, alpha=0.3)
-                    axes[4].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-            except Exception as e:
-                axes[4].text(0.5, 0.5, f"Power Factor\nCalculation Error\n{str(e)}", 
-                            ha='center', va='center', transform=axes[4].transAxes)
+            # Plot 3: WEC-Farm Bus Voltage
+            v_data = getattr(bus_data, 'v_mag')
+            wec_buses = [info['bus_location'] for info in wec_farm_info]
+            available_wec_buses = [bus for bus in wec_buses if bus in v_data.columns]
             
-            # Plot 6: WEC Efficiency or Utilization
-            try:
-                if wec_gen_names and available_wecs:
-                    p_data = getattr(gen_data, 'p')
-                    wec_p_data = p_data[available_wecs]
-                    
-                    # Show individual WEC contributions as percentage of total WEC power
-                    total_wec = wec_p_data.sum(axis=1)
-                    wec_percentage = wec_p_data.div(total_wec, axis=0) * 100
-                    wec_percentage.plot(ax=axes[5], title="Individual WEC Contributions (%)", linewidth=2)
-                    axes[5].set_ylabel("Percentage of Total WEC Power (%)")
-                    axes[5].grid(True, alpha=0.3)
-                    axes[5].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-            except Exception as e:
-                axes[5].text(0.5, 0.5, f"WEC Contribution\nCalculation Error\n{str(e)}", 
-                            ha='center', va='center', transform=axes[5].transAxes)
+            if available_wec_buses:
+                wec_bus_v_data = v_data[available_wec_buses]
+                
+                # Create labels using farm names and bus numbers
+                plot_data = wec_bus_v_data.copy()
+                column_mapping = {}
+                for info in wec_farm_info:
+                    if info['bus_location'] in plot_data.columns:
+                        column_mapping[info['bus_location']] = f"{info['farm_name']} (Bus {info['bus_location']})"
+                plot_data.rename(columns=column_mapping, inplace=True)
+                
+                plot_data.plot(ax=axes[2], linewidth=2, title="WEC-Farm Bus Voltage")
+                axes[2].set_ylabel("Voltage (p.u.)")
+                axes[2].grid(True, alpha=0.3)
+                if len(available_wec_buses) > 1:
+                    axes[2].legend(loc='upper right')
+            else:
+                axes[2].text(0.5, 0.5, f"WEC farm buses\n{wec_buses}\nnot found in voltage data", 
+                            ha='center', va='center', transform=axes[2].transAxes)
+                axes[2].set_title("WEC-Farm Bus Voltage")
             
-            # Set overall title
+            # Set overall title and adjust layout
             fig.suptitle(f"WEC Farm Analysis - {software.upper()}", fontsize=16, fontweight='bold')
             plt.tight_layout()
             plt.show()
             
         except Exception as e:
             print(f"Error in WEC analysis: {e}")
+            import traceback
+            traceback.print_exc()
+            
             # Show error message on first subplot
             axes[0].text(0.5, 0.5, f"Error: {e}", ha='center', va='center', transform=axes[0].transAxes)
+            axes[0].set_title("WEC Farm Analysis - Error")
+            for i in range(1, 3):
+                axes[i].text(0.5, 0.5, "Error occurred", ha='center', va='center', transform=axes[i].transAxes)
             plt.show()
         
         return fig, axes
@@ -415,6 +407,7 @@ class WECGridPlotter:
         self.plot_line(software, "line_pct", figsize=(10, 4))
 
     def comparison_suite(self):
+        # todo fix legends
         """Run a full comparison between PSS®E and PyPSA"""
         print("\n=== PSS®E vs PyPSA Comparison Suite ===")
         
