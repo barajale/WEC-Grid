@@ -408,6 +408,7 @@ class WECGridPlotter:
 
     def comparison_suite(self):
         # todo fix legends
+        # MSE
         """Run a full comparison between PSS®E and PyPSA"""
         print("\n=== PSS®E vs PyPSA Comparison Suite ===")
         
