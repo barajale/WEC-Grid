@@ -7,53 +7,14 @@ It supports hydrodynamic WEC modeling via **WEC-Sim**, standardized data handlin
 
 ## Features
 
-- **Multi-platform grid simulation** — works with PSS®E and PyPSA.
+- **Multi-platform grid simulation** — i.e PSS®E and PyPSA.
 - **Hydrodynamic modeling** with MATLAB-based WEC-Sim.
 - **Standardized data APIs** for bus, generator, and load data.
 - **Built-in example models** — IEEE test systems and RM3 WEC model.
 - **Integrated database support** for simulation results.
 - **Visualization tools** for time series and network plots.
 
----
 
-## Installation
-
-```bash
-git clone https://github.com/acep-uaf/WEC-GRID.git
-cd WEC-GRID
-pip install -e .
-```
-
-Python 3.7 is required.
-
----
-
-## Quick Start
-
-```python
-import wecgrid
-
-# Initialize
-engine = wecgrid.Engine()
-
-# Load an example IEEE 30-bus case
-engine.case("IEEE_30_bus")
-
-# Load grid modelers
-engine.load(["psse", "pypsa"])
-```
-
----
-
-## API Documentation
-
-The API documentation is generated directly from the codebase using `mkdocstrings`.  
-Click on the sections below to explore:
-
-- [Engine](engine.md)
-- [PSS®E Modeler](psse.md)
-- [PyPSA Modeler](pypsa.md)
-- [WEC System](wec.md)
 
 ---
 
