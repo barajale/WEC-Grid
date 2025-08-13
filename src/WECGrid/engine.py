@@ -58,7 +58,7 @@ class Engine:
         >>> engine = Engine()
         >>> engine.case("IEEE_30_bus")
         >>> engine.load(["psse", "pypsa"])
-        >>> engine.apply_wec("North Farm", size=5, bus_location=14)
+        >>> engine.apply_wec("North Farm", size=5, bus_location=14, model="RM3")
         >>> engine.simulate(sim_length=288, load_curve=True)
         
         >>> # Cross-platform comparison
@@ -69,15 +69,9 @@ class Engine:
         
     Notes:
         - Requires appropriate software licenses (PSS®E) and installations
-        - WEC data sourced from WEC-Sim simulations or database
+        - WEC data sourced from WEC-Sim simulations or database. MATLAB required for WEC-SIM simulations
         - Supports academic research and commercial power system studies
         - Designed for cross-platform validation and verification workflows
-        
-    See Also:
-        PSSEModeler: PSS®E power system simulation interface
-        PyPSAModeler: PyPSA power system simulation interface
-        WECFarm: Wave energy converter farm modeling
-        WECGridPlotter: Visualization and analysis tools
     """
     #TODO name it WECGridEngine? think on it
 
@@ -98,25 +92,16 @@ class Engine:
             - WEC-Sim runner for device-level simulations
             - Empty collections for WEC farms
             
-        Example:
-            >>> engine = Engine()
-            >>> print(f"Engine initialized with {len(engine.wec_farms)} WEC farms")
-            Engine initialized with 0 WEC farms
-            
         Notes:
             - No power system case is loaded initially
             - All modelers (PSS®E, PyPSA) are set to None until explicitly loaded
-            - Database connection is established but no simulation data exists
+            - Database connection is established but no data is pulled
             - Ready for case loading via engine.case() method
             
-        See Also:
-            case: Load a power system case file
-            load: Initialize power system software backends
         """
         self.case_file: Optional[str] = None
         self.case_name: Optional[str] = None
         self.time = WECGridTimeManager() # TODO this needs more functionality
-        #self.path_manager = WECGridPathManager()
         self.psse: Optional[PSSEModeler] = None
         self.pypsa: Optional[PyPSAModeler] = None
         self.wec_farms: List[WECFarm] = []
@@ -128,9 +113,9 @@ class Engine:
     def case(self, case_file: str):
         """Load a power system case file for simulation.
         
-        Sets the power system case file that will be used for all subsequent simulations.
-        Supports both local file paths and bundled IEEE test cases. The case name is
-        automatically derived from the filename for display purposes.
+        Sets the power system case file that will be used for all subsequent simulations 
+        and Power System modlers. Supports both local file paths and bundled IEEE test cases. 
+        The case name is automatically derived from the filename for display purposes.
         
         Args:
             case_file (str): Path to power system case file. Can be:
@@ -170,9 +155,6 @@ class Engine:
             - Must be called before load() to initialize power system backends
             - Case file is validated when modelers are initialized
             
-        See Also:
-            load: Initialize power system software with loaded case
-            resolve_grid_case: Internal case file resolution utility
         """
         path = resolve_grid_case(case_file)
         self.case_file = str(path)
@@ -210,35 +192,12 @@ class Engine:
             >>> print(f"PyPSA loaded: {engine.pypsa is not None}")
             PSS®E loaded: True
             PyPSA loaded: True
-            
-        Software Requirements:
-            **PSS®E**:
-                - Valid PSS®E license and installation
-                - Python API properly configured
-                - Compatible PSS®E version (v33+)
-                
-            **PyPSA**:
-                - PyPSA library installed
-                - Compatible with pandapower for power flow
-                - No licensing requirements (open source)
-                
-        Backend Initialization:
-            - **PSS®E**: Initializes COM interface and loads case file
-            - **PyPSA**: Converts RAW file format and builds network model
-            - Both backends validate case file compatibility
-            - Reactive power limits adjusted for cross-platform consistency
-            
+               
         Notes:
             - Case file must be loaded first using engine.case()
             - Multiple backends enable cross-platform validation studies
             - PSS®E requires commercial license; PyPSA is open source
             - Backends are independent and can simulate separately
-            - TODO: Add error handling for initialization failures
-            
-        See Also:
-            case: Load power system case file
-            PSSEModeler: PSS®E simulation interface
-            PyPSAModeler: PyPSA simulation interface
         """
         if self.case_file is None:
             raise ValueError("No case file set. Use `engine.case('path/to/case.RAW')` first.")
@@ -262,7 +221,7 @@ class Engine:
         self,
         farm_name: str,
         size: int = 1,
-        sim_id: int = -1,
+        sim_id: int = 1,
         model: str = "RM3",
         bus_location: int = 1,
         connecting_bus: int = 1, # todo this should default to swing bus
@@ -277,14 +236,14 @@ class Engine:
             farm_name (str): Human-readable name for the WEC farm.
             size (int, optional): Number of WEC devices in the farm. Defaults to 1.
             sim_id (int, optional): Database simulation ID for WEC data retrieval.
-                Use -1 for synthetic/default data. Defaults to -1.
+                Use 1 for default data.
             model (str, optional): WEC device model type. Defaults to "RM3".
                 Supported models:
                 - "RM3": Reference Model 3 (point absorber)
             bus_location (int, optional): Power system bus for WEC connection.
                 Defaults to 1.
             connecting_bus (int, optional): Connection bus for network topology.
-                Defaults to 1.
+                Defaults to 1. Typically the swing bus.
                 
         Returns:
             None: Creates WECFarm object and adds to internal collections.
@@ -309,18 +268,6 @@ class Engine:
             >>> print(f"Total farms: {len(engine.wec_farms)}")
             Total farms: 2
             
-        WEC Farm Integration:
-            - **Power Output**: Time-series active power from WEC-Sim simulations
-            - **Grid Connection**: Modeled as generator at specified bus location
-            - **Farm Scaling**: Individual device power multiplied by farm size
-            - **Database Linking**: Retrieves device data using sim_id
-            
-        Power System Integration:
-            - Added to PSS®E as dynamic generator with time-varying output
-            - Added to PyPSA as renewable generator with time series
-            - Unique generator ID assigned automatically
-            - Consistent modeling across both software platforms
-            
         Notes:
             - Farm size scales individual device power output linearly
             - WEC data sourced from database using sim_id parameter
@@ -329,19 +276,6 @@ class Engine:
             - TODO: Address PSS®E generator ID limitation for larger studies
             - TODO: Default connecting_bus should be swing bus
             
-        WEC Farm Attributes:
-            Each created farm has:
-            - farm_name: Human-readable identifier
-            - size: Number of devices
-            - bus_location: Grid connection point
-            - gen_id: Unique generator identifier
-            - wec_devices: Collection of device objects with power data
-            
-        See Also:
-            WECFarm: Wave energy converter farm modeling class
-            WECSimRunner: Interface to WEC-Sim device simulations
-            PSSEModeler.add_wec_farm: PSS®E integration method
-            PyPSAModeler.add_wec_farm: PyPSA integration method
         """
         wec_farm: WECFarm = WECFarm(
             farm_name=farm_name,
@@ -404,25 +338,7 @@ class Engine:
                     
             Raises:
                 ValueError: If no power system modeler is loaded.
-                
-            Example:
-                >>> # Standard residential/commercial profile
-                >>> load_df = engine.generate_load_curves()
-                >>> print(f"Load shape: {load_df.shape}")
-                Load shape: (288, 15)  # 288 time steps, 15 load buses
-                
-                >>> # Industrial profile with late evening peak
-                >>> industrial_load = engine.generate_load_curves(
-                ...     morning_peak_hour=7.0,
-                ...     evening_peak_hour=22.0,
-                ...     amplitude=0.15  # Less variability
-                ... )
-                
-                >>> # Custom per-bus profiles
-                >>> custom_load = engine.generate_load_curves(
-                ...     amp_overrides={14: 0.50, 30: 0.10}  # High/low variability buses
-                ... )
-                
+
             Load Profile Characteristics:
                 - **Double-peak pattern**: Morning and evening demand peaks
                 - **Gaussian shape**: Smooth transitions between demand levels
@@ -445,30 +361,7 @@ class Engine:
                 load(b,t) = base_load(b) * (1 + amplitude(b) * normalized(t))
                 load(b,t) = clip(load(b,t), min_multiplier * base_load(b), 2-min_multiplier * base_load(b))
                 ```
-                
-            Data Sources:
-                - **PSS®E**: Extracts base loads from psse.grid.load DataFrame
-                - **PyPSA**: Extracts base loads from pypsa.network.loads, aggregated by bus
-                - **Automatic selection**: Uses available modeler (PSS®E preferred)
-                
-            Notes:
-                - Zero-load buses are excluded from output DataFrame
-                - Time series length matches engine time manager snapshots
-                - Amplitude overrides enable modeling different customer classes
-                - Min/max multipliers prevent unrealistic demand swings
-                - Suitable for daily, multi-day, or seasonal studies
-                
-            Use Cases:
-                - **Load variability studies**: Impact of demand fluctuations
-                - **WEC integration analysis**: Renewable vs. demand correlation
-                - **Grid stability assessment**: Dynamic load effects
-                - **Economic dispatch**: Time-varying load costs
-                
-            See Also:
-                simulate: Use generated load curves in time-series simulation
-                WECGridTimeManager: Time coordination and snapshot management
-                PSSEModeler.simulate: PSS®E simulation with load curves
-                PyPSAModeler.simulate: PyPSA simulation with load curves
+
             """
 
             if self.psse is None and self.pypsa is None:
@@ -525,49 +418,6 @@ class Engine:
             prof.index.name = "time"
             return prof
 
-    # def generate_load_curves(self) -> pd.DataFrame:
-    #     """
-    #     Generate synthetic load profiles using a normalized double-peak shape.
-    #     Returns a DataFrame indexed by time, with one column per bus.
-    #     """
-    #     #TODO the double peaks should be time dependedent, need to avoid applying a double peak to a  2hour sim 
-
-    #     if self.psse is None and self.pypsa is None:
-    #         raise ValueError("No power system modeler loaded. Use `engine.load(...)` first.")
-
-    #     # --- Use PSSE or PyPSA Grid state to get base load ---
-    #     if self.psse is not None:
-    #         base_load = (
-    #             self.psse.grid.load[["bus", "p"]]
-    #             .drop_duplicates("bus")
-    #             .set_index("bus")["p"]
-    #         )
-    #     elif self.pypsa is not None:
-    #         base_load = (
-    #             self.pypsa.network.loads[["bus", "p"]]
-    #             .groupby("bus")["p"]
-    #             .sum()
-    #         )
-    #     else:
-    #         raise ValueError("No valid base load could be extracted from modelers.")
-
-    #     # --- Create time-dependent shape (double peak) ---
-    #     times = pd.to_datetime(self.time.snapshots)
-    #     hours = times.hour + times.minute / 60.0
-
-    #     shape = 0.5 + 0.5 * (
-    #         np.exp(-0.5 * ((hours - 8) / 2) ** 2) +
-    #         np.exp(-0.5 * ((hours - 18) / 2) ** 2)
-    #     )
-
-    #     # --- Generate time-series DataFrame ---
-    #     profile = pd.DataFrame(index=self.time.snapshots)
-
-    #     for bus, base in base_load.items():
-    #         if base > 0:
-    #             profile[bus] = base * shape
-
-    #     return profile
 
     def simulate(
         self,
@@ -617,54 +467,13 @@ class Engine:
             - **WEC integration**: Realistic renewable power injection
             - **Cross-platform**: Simultaneous PSS®E and PyPSA execution
             
-        Length Management:
-            **Without WEC farms**:
-                - Uses sim_length if specified
-                - Otherwise uses engine.time default length
-                
-            **With WEC farms**:
-                - Constrained by WEC data availability
-                - Uses min(sim_length, available_wec_length)
-                - Warns if requested length exceeds WEC data
-                - Auto-updates time manager if length changes
-                
-        Load Curve Integration:
-            When load_curve=True:
-            - Generates double-peak daily profiles using generate_load_curves()
-            - Default amplitude: 10% (±10% around base load)
-            - Applied to all buses with non-zero loads
-            - Replaces static case file load values
-            
-        Backend Execution:
-            - **PSS®E**: Dynamic simulation with time-series data injection
-            - **PyPSA**: Optimal power flow across all time snapshots
-            - **Independent operation**: Each backend simulates separately
-            - **Consistent inputs**: Same load curves and WEC data
-            
-        Data Storage:
-            Simulation results accessible via:
-            - `engine.psse.grid`: PSS®E time-series results
-            - `engine.pypsa.grid`: PyPSA time-series results
-            - Database storage handled by individual modelers
-            
         Notes:
             - WEC data length constraint prevents simulation errors
             - Different WEC farms with varying data lengths may cause issues
             - Load curve amplitude reduced (10%) for realistic daily variation
             - Plot parameter reserved for future automatic visualization
             - TODO: Address multi-farm data length inconsistencies
-            
-        Performance Considerations:
-            - PSS®E simulations scale with network size and time steps
-            - PyPSA simulations benefit from optimization solver selection
-            - Memory usage increases with longer time series
-            - Parallel execution not currently supported
-            
-        See Also:
-            generate_load_curves: Time-varying load profile generation
-            PSSEModeler.simulate: PSS®E backend simulation method
-            PyPSAModeler.simulate: PyPSA backend simulation method
-            WECGridTimeManager: Time coordination and snapshot management
+
         """
 
         # show that if different farms have different wec durations this logic fails
@@ -693,464 +502,3 @@ class Engine:
             if modeler is not None:
                 modeler.simulate(load_curve=load_curve_df)
                 # todo if plot then plot
-
-
-# # src/wecgrid/engine.py
-
-# """
-# WEC-Grid Engine module
-# Author: Alexander Barajas-Ritchie
-# Email: barajale@oregonstate.edu
-# """
-
-# # Standard library
-# import os
-# import sys
-# import time
-# import json
-# from datetime import datetime, timezone, timedelta
-# from typing import List, Union
-
-# # Third-party
-# import pandas as pd
-# import numpy as np
-# import sqlite3
-# import pypsa
-# import pypower.api as pypower
-# import matlab.engine
-# import matplotlib.pyplot as plt
-
-# # Local imports
-# from wecgrid.database import wecgrid_db
-# from wecgrid.modelers import PSSEModeler, PyPSAModeler
-# from wecgrid.plot import WECGridPlotter
-# from wecgrid.wec import Farm
-
-
-# class Engine:
-#     """
-#     Main class for coordinating between PSSE and PyPSA functionality and managing WEC devices.
-
-#     Attributes:
-#         case (str): Path to the case file.
-#         psseObj (PSSEWrapper): Instance of the PSSE wrapper class.
-#         pypsaObj (PyPSAWrapper): Instance of the PyPSA wrapper class.
-#         wecObj_list (list): List of WEC objects.
-#     """
-
-#     def __init__(self, case: str):
-#         """
-#         Initializes the WecGrid class with the given case file.
-
-#         Args:
-#             case (str): Path to the case file.
-#         """
-#         self.case_file = case  # TODO: need to verify file exist
-#         self.case_file_name = os.path.basename(case)
-#         self.psse = None
-#         self.pypsa = None
-#         self.start_time = datetime(1997, 11, 3, 0, 0, 0)
-#         self.sim_length = 288 # 5 min intervals
-#         self.snapshots = pd.date_range(
-#                 start=self.start_time,
-#                 periods= self.sim_length , # 288 5-minute intervals in a day
-#                 freq="5T",  # 5-minute intervals
-#             )
-#         self.wecObj_list = []
-#         self.wec_buses = []
-#         self.software = [] 
-#         self.generator_compare = None
-#         self.bus_compare = None
-#         self.viz = WECGridVisualizer(self)
-        
-#         self.initialize_simulation_db(DB_PATH)
-
-#     def initialize_simulation_db(self, path):
-#         #TODO: need to move this to DB wrapper handler 
-#         #TODO: needs to check if db exists, if not create it with tables, if there, should check if tables exist,
-#         #TODO: need a function to print a report of the contents of the database
-        
-#         with sqlite3.connect(path) as conn:
-#             cursor = conn.cursor()
-
-#             cursor.execute("""
-#             CREATE TABLE IF NOT EXISTS sim_runs (
-#                 sim_id INTEGER PRIMARY KEY AUTOINCREMENT,
-#                 sim_name TEXT NOT NULL,
-#                 timestamp TEXT NOT NULL,
-#                 notes TEXT
-#             )
-#             """)
-
-#             cursor.execute("""
-#             CREATE TABLE IF NOT EXISTS bus_timeseries (
-#                 sim_id INTEGER,
-#                 timestamp TEXT,
-#                 bus_id TEXT,
-#                 p_mw REAL,
-#                 v_pu REAL,
-#                 source TEXT,
-#                 FOREIGN KEY(sim_id) REFERENCES sim_runs(sim_id)
-#             )
-#             """)
-
-#             cursor.execute("""
-#             CREATE TABLE IF NOT EXISTS gen_timeseries (
-#                 sim_id INTEGER,
-#                 timestamp TEXT,
-#                 gen_id TEXT,
-#                 p_mw REAL,
-#                 source TEXT,
-#                 FOREIGN KEY(sim_id) REFERENCES sim_runs(sim_id)
-#             )
-#             """)
-
-#             conn.commit()
-        
-#     def load(self, software):
-#         """
-#         Enables one or more supported power system software tools.
-
-#         Args:
-#             software (str or list of str): Name(s) of supported software to initialize.
-#                                         Options: "psse", "pypsa"
-#         """
-#         if isinstance(software, str):
-#             software = [software]
-
-#         for name in software:
-#             name = name.lower()
-#             if name == "psse":
-#                 self.psse = PSSEInterface(self.case_file, self)
-#                 self.psse.init_api()
-#             elif name == "pypsa":
-#                 self.pypsa = PYPSAInterface(self.case_file, self)
-#                 self.pypsa.init_api()
-#                 if self.psse is not None:
-#                     self.psse.adjust_reactive_lim()
-#             else:
-#                 raise ValueError(f"Unsupported software: '{name}'. Use 'psse' or 'pypsa'.")
-
-#     def apply_wecs(self, sim_id=None, model="RM3", farm_size=8, ibus=None, jbus=1, mbase=0.01, config=None):
-#         #TODO: need to confirm i and j bus are correct orientation
-#         """
-#         Creates a WEC device and adds it to both PSSE and PyPSA models.
-
-#         Args:
-#             ID (int): Identifier for the WEC device.
-#             model (str): Model type of the WEC device.
-#             from_bus (int): The bus number from which the WEC device is connected.
-#             to_bus (int): The bus number to which the WEC device is connected.
-#         """
-#         if config is None:
-#             config = {
-#                 "simLength": (self.sim_length * 5 * 60), # Simulation length in seconds
-#                 "Tsample": 300,  # Sampling time of 5 minutes
-#                 "waveHeight": 2.5, # Wave height in meters
-#                 "wavePeriod": 8, # Wave period in seconds
-#             }
-#         else:
-#             self.sim_length = config["simLength"] / 300
-#             self.snapshots = pd.date_range(
-#                 start=self.start_time,
-#                 periods= self.sim_length , # 288 5-minute intervals in a day
-#                 freq="5T",  # 5-minute intervals
-#             )
-#         self.wec_buses.append(ibus)
-#         for i in range(farm_size):
-#             self.wecObj_list.append(
-#                 device.WEC(
-#                     engine=self,
-#                     sim_id=sim_id,
-#                     model=model,
-#                     bus_location=ibus,
-#                     MBASE=mbase,
-#                     config=config  
-#                 )
-#             )
-#         if self.pypsa is not None:
-#             #TODO: this is not returning false if broken
-#             if self.pypsa.add_wec(model, ibus, jbus):
-#                 print("WEC components added to PyPSA network.")
-#             else:
-#                 print("Failed to add WEC to PyPSA network.")
-            
-#         if self.psse is not None:
-#             if self.psse.add_wec(model, ibus, jbus):
-#                 print("WEC components added to PSS®E network.")
-#             else:
-#                 print("Failed to add WEC to PSS®E network.")
-
-#     def generate_load_profiles(self):
-#         """
-#         Create a unified double-peaking load curve profile, then split it for pyPSA and PSS®E.
-#         Stores results in self.load_profiles_pypsa and self.load_profiles_psse
-#         """
-#         # 1. Extract base loads for pyPSA (load ID → MW)
-#         pypsa_base = self.pypsa.network.loads[["bus", "p_set"]].copy()
-
-#         # 2. Extract base loads for PSS®E (bus number → MW)
-#         psse_base = (
-#             self.psse.loads_dataframe[["BUS_NUMBER", "P_MW"]]
-#             .drop_duplicates("BUS_NUMBER")
-#             .set_index("BUS_NUMBER")["P_MW"]
-#         )
-
-#         # 3. Create the normalized load shape over the day
-#         times = pd.to_datetime(self.snapshots)
-#         hours = times.hour + times.minute / 60.0
-
-#         def double_peak(hour):
-#             return 0.5 + 0.5 * (
-#                 np.exp(-0.5 * ((hour - 8) / 2) ** 2) +
-#                 np.exp(-0.5 * ((hour - 18) / 2) ** 2)
-#             )
-
-#         shape = double_peak(hours)
-
-#         # 4. Create time-indexed DataFrames
-#         df_pypsa = pd.DataFrame(index=self.snapshots)
-#         df_psse = pd.DataFrame(index=self.snapshots)
-
-#         # 5. Apply curve to pyPSA loads (column = load ID)
-#         for load_id, row in pypsa_base.iterrows():
-#             base = row["p_set"]
-#             if base > 0:
-#                 df_pypsa[load_id] = base * shape
-
-#         # 6. Apply curve to PSS®E loads (column = bus number)
-#         for bus, base in psse_base.items():
-#             if base > 0:
-#                 df_psse[bus] = base * shape
-
-#         # 7. Store
-#         self.pypsa.load_profiles = df_pypsa
-#         self.psse.load_profiles = df_psse
-        
-#     def simulate(self, load_curve=True, plot=True):
-#         """
-#         Simulates the WEC devices and updates the PSSE and PyPSA models.
-
-#         Args:
-#             load_curve (bool): If True, simulates the load curve.
-#         """
-#         if self.psse is not None:
-#             print("Simulating on PSS®E...")
-#             start_time = time.time()
-#             if self.psse.simulate(load_curve=load_curve, plot=plot):
-#                 print("PSS®E simulation complete in {} seconds. \n".format(time.time() - start_time))
-#             else:
-#                 print("PSS®E simulation failed. \n")
-            
-#         if self.pypsa is not None:
-#             print("Simulating on PyPSA...")
-#             start_time = time.time()
-#             if self.pypsa.simulate(load_curve=load_curve, plot=plot):
-#                 print("PyPSA simulation complete in {} seconds. \n".format(time.time() - start_time))
-#             else:
-#                 print("PyPSA simulation failed. \n")
-        
-#         #self.compare_results()
-
-#     def compare_results(self, plot=True):
-#         if self.psse is not None and self.pypsa is not None and plot:
-#             self.viz.plot_comparison()
-
-#         def compute_rmse_corr(psse_df, pypsa_df, label_prefix=None, convert_cols=False):
-#             if convert_cols:
-#                 psse_df.columns = psse_df.columns.map(str)
-#             common = sorted(set(psse_df.columns).intersection(set(pypsa_df.columns)), key=str)
-
-#             rows = []
-#             for key in common:
-#                 psse_series = psse_df[key]
-#                 pypsa_series = pypsa_df[key]
-#                 rmse = np.sqrt(((psse_series - pypsa_series) ** 2).mean())
-
-#                 # Only compute correlation if there is variance
-#                 if psse_series.std() == 0 or pypsa_series.std() == 0:
-#                     corr = np.nan
-#                 else:
-#                     corr = psse_series.corr(pypsa_series)
-
-#                 rows.append({
-#                     "ID": key,
-#                     "Parameter": label_prefix,
-#                     "RMSE": rmse,
-#                 })
-#             return pd.DataFrame(rows)
-
-#         # Compute generator comparison
-#         gen_df = compute_rmse_corr(
-#             self.psse.generator_dataframe_t.p.copy(),
-#             self.pypsa.network.generators_t.p.copy(),
-#             label_prefix="P"
-#         ).rename(columns={"ID": "Generator"})[["Generator", "Parameter", "RMSE"]]
-
-#         # Compute bus P and V comparison
-#         bus_p_df = compute_rmse_corr(
-#             self.psse.bus_dataframe_t.p.copy(),
-#             self.pypsa.network.buses_t.p.copy(),
-#             label_prefix="P",
-#             convert_cols=True
-#         )
-
-#         bus_v_df = compute_rmse_corr(
-#             self.psse.bus_dataframe_t.v_mag_pu.copy(),
-#             self.pypsa.network.buses_t.v_mag_pu.copy(),
-#             label_prefix="V_mag",
-#             convert_cols=True
-#         )
-
-#         bus_df = pd.concat([bus_p_df, bus_v_df]) \
-#                 .rename(columns={"ID": "Bus"}) \
-#                 [["Bus", "Parameter", "RMSE"]]
-
-#         # Save to attributes for inspection in notebook
-#         self.generator_compare = gen_df
-#         self.bus_compare = bus_df
-
-#     def save_simulation(self, sim_name="Unnamed Run", notes=""):
-#         timestamp = datetime.now().isoformat()
-#         with sqlite3.connect(DB_PATH) as conn:
-#             cursor = conn.cursor()
-#             cursor.execute("""
-#                 INSERT INTO sim_runs (sim_name, timestamp, notes)
-#                 VALUES (?, ?, ?)
-#             """, (sim_name, timestamp, notes))
-#             sim_id = cursor.lastrowid
-
-#         if self.psse is not None:
-#             self.save_psse_run(sim_id)
-#         if self.pypsa is not None:
-#             self.save_pypsa_run(sim_id)
-
-#     def save_psse_run(self, sim_id):
-#         conn = sqlite3.connect(DB_PATH)
-#         cursor = conn.cursor()
-
-#         psse_bus = self.psse.bus_dataframe_t
-#         psse_gen = self.psse.generator_dataframe_t
-
-#         for timestamp in psse_bus.p.index:
-#             for bus in psse_bus.p.columns:
-#                 cursor.execute("""
-#                     INSERT INTO bus_timeseries (sim_id, timestamp, bus_id, p_mw, v_pu, source)
-#                     VALUES (?, ?, ?, ?, ?, ?)
-#                 """, (sim_id, timestamp.isoformat(), str(bus),
-#                     psse_bus.p.at[timestamp, bus],
-#                     psse_bus.v_mag_pu.at[timestamp, bus],
-#                     "psse"))
-
-#             for gen in psse_gen.p.columns:
-#                 cursor.execute("""
-#                     INSERT INTO gen_timeseries (sim_id, timestamp, gen_id, p_mw, source)
-#                     VALUES (?, ?, ?, ?, ?)
-#                 """, (sim_id, timestamp.isoformat(), gen,
-#                     psse_gen.p.at[timestamp, gen],
-#                     "psse"))
-
-#         conn.commit()
-#         conn.close()
-
-#     def save_pypsa_run(self, sim_id):
-#         conn = sqlite3.connect(DB_PATH)
-#         cursor = conn.cursor()
-
-#         pypsa_bus = self.pypsa.network.buses_t
-#         pypsa_gen = self.pypsa.network.generators_t
-
-#         for timestamp in pypsa_bus.p.index:
-#             for bus in pypsa_bus.p.columns:
-#                 cursor.execute("""
-#                     INSERT INTO bus_timeseries (sim_id, timestamp, bus_id, p_mw, v_pu, source)
-#                     VALUES (?, ?, ?, ?, ?, ?)
-#                 """, (sim_id, timestamp.isoformat(), str(bus),
-#                     pypsa_bus.p.at[timestamp, bus],
-#                     pypsa_bus.v_mag_pu.at[timestamp, bus],
-#                     "pypsa"))
-
-#             for gen in pypsa_gen.p.columns:
-#                 cursor.execute("""
-#                     INSERT INTO gen_timeseries (sim_id, timestamp, gen_id, p_mw, source)
-#                     VALUES (?, ?, ?, ?, ?)
-#                 """, (sim_id, timestamp.isoformat(), gen,
-#                     pypsa_gen.p.at[timestamp, gen],
-#                     "pypsa"))
-
-#         conn.commit()
-#         conn.close()
-
-#     def saved_runs(self):
-#         """
-#         Lists all simulation runs stored in the database.
-#         """
-#         with sqlite3.connect(DB_PATH) as conn:
-#             df = pd.read_sql("SELECT * FROM sim_runs ORDER BY sim_id DESC", conn)
-#         return df
-    
-#     def pull_sim(self, sim_id=None):
-#         """
-#         Loads the results of a previous simulation run.
-
-#         Args:
-#             sim_id (int, optional): If not provided, loads the most recent run.
-
-#         Returns:
-#             dict: A dictionary containing DataFrames:
-#                 {
-#                     "psse_gen": ..., "pypsa_gen": ...,
-#                     "psse_bus": ..., "pypsa_bus": ...
-#                 }
-#         """
-#         with sqlite3.connect(DB_PATH) as conn:
-#             cursor = conn.cursor()
-
-#             if sim_id is None:
-#                 cursor.execute("SELECT MAX(sim_id) FROM sim_runs")
-#                 sim_id = cursor.fetchone()[0]
-#                 if sim_id is None:
-#                     raise ValueError("No simulation runs found in the database.")
-
-#             gen_df = pd.read_sql(
-#                 "SELECT * FROM gen_timeseries WHERE sim_id = ?", conn, params=(sim_id,)
-#             )
-#             bus_df = pd.read_sql(
-#                 "SELECT * FROM bus_timeseries WHERE sim_id = ?", conn, params=(sim_id,)
-#             )
-
-#         # Split by source
-#         gen_psse = gen_df[gen_df["source"] == "psse"].drop(columns=["sim_id", "source"])
-#         gen_pypsa = gen_df[gen_df["source"] == "pypsa"].drop(columns=["sim_id", "source"])
-#         bus_psse = bus_df[bus_df["source"] == "psse"].drop(columns=["sim_id", "source"])
-#         bus_pypsa = bus_df[bus_df["source"] == "pypsa"].drop(columns=["sim_id", "source"])
-
-#         # Timestamp to index
-#         for df in [gen_psse, gen_pypsa, bus_psse, bus_pypsa]:
-#             df["timestamp"] = pd.to_datetime(df["timestamp"])
-#             df.set_index("timestamp", inplace=True)
-
-#         # Pivot helper (flexible to dropped columns)
-#         def pivot(df, id_col):
-#             return {
-#                 col: df.pivot_table(index="timestamp", columns=id_col, values=col)
-#                 for col in df.columns
-#                 if col != id_col
-#             }
-
-#         return {
-#             "psse_gen": pivot(gen_psse, "gen_id"),
-#             "pypsa_gen": pivot(gen_pypsa, "gen_id"),
-#             "psse_bus": pivot(bus_psse, "bus_id"),
-#             "pypsa_bus": pivot(bus_pypsa, "bus_id"),
-#         }
-    
-
-# #TODO: need to update the software to run without wec case 
-# #TODO: need a function to tell me all the wec-sim runs i have in my db
-# #TODO: need a function to store my simulation results in the db
-# #TODO: need a function to pull my simulation results from the db for analysis? 
- 
-            
-            
-            

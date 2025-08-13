@@ -69,8 +69,8 @@ class WECSimRunner:
         
     WEC-Sim Integration:
         - Requires WEC-Sim MATLAB toolbox installation
-        - Supports standard WEC models (RM3, LUPA)
-        - Handles wave generation and hydrodynamic calculations
+        - Supports WEC models (RM3, LUPA) found in src/wecgrid/models/wec_models
+        - Handles wave generation and hydrodynamic calculations via WEC-SIM
         - Outputs power time series for grid integration
         
     Database Schema:
@@ -85,10 +85,6 @@ class WECSimRunner:
         - Results include both power output and wave elevation data
         - Automatic visualization helps validate simulation quality
         
-    See Also:
-        WECGridDB: Database interface for simulation data
-        WECFarm: Grid-level WEC farm modeling
-        resolve_wec_model: WEC model path resolution utility
         
     References:
         WEC-Sim documentation: https://wec-sim.github.io/WEC-Sim/
@@ -103,30 +99,16 @@ class WECSimRunner:
         Args:
             database (WECGridDB): Database interface for simulation data storage.
                 Must be a valid WECGridDB instance with working connection.
-                
-        Example:
-            >>> from wecgrid.database import WECGridDB
-            >>> db = WECGridDB()
-            >>> runner = WECSimRunner(db)
-            >>> print(f"Runner initialized, MATLAB engine: {runner.matlab_engine}")
-            Runner initialized, MATLAB engine: None
-            
+
         Initialization State:
             - Database connection: Active and ready
             - WEC-Sim path: Not configured (must set manually)
             - MATLAB engine: Not started (lazy initialization)
             
         Notes:
-            - MATLAB engine startup is deferred for performance
             - WEC-Sim path must be configured before running simulations
             - Database connection is validated during initialization
-            
-        See Also:
-            set_wec_sim_path: Configure WEC-Sim installation location
-            start_matlab: Initialize MATLAB engine when needed
         """
-
-        #self.path_manager: WECGridPathManager = path_manager
         self.wec_sim_path: Optional[str] = None
         self.database: WECGridDB = database
         self.matlab_engine: Optional[matlab.engine.MatlabEngine] = None
@@ -147,33 +129,7 @@ class WECSimRunner:
             
         Raises:
             FileNotFoundError: If specified path does not exist.
-            
-        Example:
-            >>> # Windows installation
-            >>> runner.set_wec_sim_path("C:/WEC-Sim")
-            
-            >>> # Linux/Mac installation  
-            >>> runner.set_wec_sim_path("/opt/WEC-Sim")
-            
-            >>> # Verify configuration
-            >>> print(f"WEC-Sim path: {runner.wec_sim_path}")
-            WEC-Sim path: C:/WEC-Sim
-            
-        Path Requirements:
-            - Must be absolute path to WEC-Sim root directory
-            - Directory must exist and be accessible
-            - Should contain WEC-Sim MATLAB functions and examples
-            - Typically includes subdirectories: functions/, examples/, docs/
-            
-        Notes:
-            - Path validation occurs immediately upon setting
-            - MATLAB engine will use this path for WEC-Sim framework initialization
-            - Required before running any WEC-Sim simulations
-            - Path should point to WEC-Sim framework root, not specific models
-            
-        See Also:
-            start_matlab: Uses this path for MATLAB engine configuration
-            resolve_wec_model: Resolves individual WEC model paths
+
         """
         self.wec_sim_path = path
         if not os.path.exists(path):
