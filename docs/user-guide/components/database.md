@@ -1,64 +1,23 @@
 # Database
 
-The WEC-Grid database component provides persistent storage and retrieval of simulation data, model configurations, and results.
-
-## Overview
-
-The database system in WEC-Grid handles:
-
-- SQLite-based data storage
-- Simulation result persistence
-- Model configuration storage
-- Time-series data management
-- Query and retrieval operations
+SQLite-based storage for simulation results, configurations, and time-series data.
 
 ## Features
 
-- **Automatic Schema Management**: Database tables are created and managed automatically
-- **Result Storage**: Power flow results, time-series data, and WEC outputs
-- **Model Persistence**: Save and load grid models and WEC configurations
-- **Query Interface**: Flexible data retrieval with filtering and aggregation
-- **Backup & Export**: Database backup and data export capabilities
-
-## Database Structure
-
-The WEC-Grid database includes tables for:
-
-- `simulations`: Simulation metadata and configurations
-- `power_flow_results`: Power flow analysis results
-- `wec_data`: WEC device and farm data
-- `time_series`: Time-varying simulation data
-- `grid_models`: Power system model information
+- Automatic result storage during simulations
+- Query interface for data retrieval  
+- Export capabilities for external analysis
 
 ## Basic Usage
 
 ```python
-from wecgrid.database import WECGridDB
-
-# Initialize database connection
-db = WECGridDB()
-
-# Store simulation results
-db.store_simulation_results(simulation_id, results_data)
-
-# Retrieve data
-data = db.get_simulation_data(simulation_id)
-
-# Query time series
-ts_data = db.query_time_series(start_time, end_time)
-```
-
-## Integration with Engine
-
-The database is automatically used by the Engine for result storage:
-
-```python
-import wecgrid
-
+# Results are stored automatically
 engine = wecgrid.Engine()
-# Database operations happen automatically
-results = engine.run_simulation()
-# Results are automatically stored in database
+engine.simulate()  # Results saved to database
+
+# Query stored data
+db = engine.database
+data = db.get_simulation_data(simulation_id)
 ```
 
 ## API Reference

@@ -1,72 +1,60 @@
 # WEC-Grid
 
-**WEC-Grid** is a Python framework for integrating **Wave Energy Converter (WEC)** models with power system simulation tools. It bridges the gap between device-level hydrodynamic modeling and grid-scale power system analysis.
+<img src="images/logo.png" width="50" height="50" />
 
-## What is WEC-Grid?
+**WEC-Grid** is an open-source software framework that integrates Wave Energy Converter (WEC) models into power system simulations, enabling preliminary integration studies of renewable wave energy with grid steady-state analysis.
 
-WEC-Grid enables researchers and engineers to:
+## Overview
 
-- **Model wave energy systems** at both device and grid scales
-- **Integrate WEC farms** into existing power system models
-- **Analyze grid impacts** of wave energy deployment
-- **Perform co-simulation** between WEC-Sim and power system tools
+Wave energy integration into power grids faces a critical modeling gap: current power system tools (such as PSS®E, PyPSA) and marine hydrodynamic simulators (WEC-Sim) operate independently, hampering collaboration between marine energy and power system communities.
 
-## Key Features
+WEC-Grid bridges this gap by providing a unified modeling approach that accurately represents interactions between hydrodynamic behaviors and electrical power systems.
 
-### 🌊 **Wave Energy Modeling**
-- Integration with MATLAB WEC-Sim for device-level physics
-- Support for validated WEC models (RM3, LUPA)
-- Scalable from single devices to large arrays
+## Key Capabilities
 
-### ⚡ **Power System Integration**
-- Compatible with PSS®E and PyPSA backends
-- IEEE standard test systems included
-- Grid connection and control modeling
+- **Multi-Platform Integration**: Seamlessly coordinates PSS®E, PyPSA, and WEC-Sim simulations
+- **Standardized Workflows**: Consistent API across different power system backends
+- **Quasi-Steady-State Analysis**: Efficient power flow and voltage stability studies with WEC integration
+- **Data Management**: SQLite database with standardized result formats for reproducible research
+- **Visualization**: Time-series plots, cross-platform comparisons, and network diagrams
 
-### 📊 **Data Management**
-- SQLite database for simulation results
-- Standardized data APIs for reproducible workflows
-- Built-in visualization and plotting tools
+## Research Applications
 
-### 🔧 **Workflow Support**
-- Time-synchronized co-simulation
-- Automated result collection and storage
-- Extensible architecture for new models
+WEC-Grid enables researchers to:
 
-## Why WEC-Grid?
+- Evaluate WEC performance under varying grid and sea state conditions
+- Analyze WEC impacts on grid stability, reliability, and power quality 
+- Conduct comparative studies across different simulation platforms
 
-Traditional wave energy studies often focus on either device-level performance or grid-level impacts in isolation. WEC-Grid provides the missing link, enabling:
+## Software Architecture
 
-- **Comprehensive analysis** of wave energy integration scenarios
-- **Realistic modeling** of both resource variability and grid constraints  
-- **Standardized workflows** for comparative studies
-- **Open-source platform** for collaborative research
+The framework employs a modular bridge pattern with:
 
-## Funding Acknowledgment
+- **Engine**: Central coordinator managing simulation timing, data flow, and result collection
+- **Software Wrappers**: Standardized interfaces for PSS®E, PyPSA, and WEC-Sim
+- **Database**: Persistent storage for simulation metadata and results
+- **Visualization**: Integrated plotting capabilities for analysis and reporting
 
-This work is supported by the Alaska Center for Energy and Power (ACEP) at the University of Alaska Fairbanks.
 
-## Quick Links
+## Getting Started
 
-- **[Installation Guide](install.md)** - Get started with WEC-Grid
-- **[Quick Start Tutorial](quickstart.md)** - Your first simulation
-- **[Examples](examples/basic-example.md)** - Complete workflow examples
-- **[API Reference](reference/api.md)** - Detailed documentation
+- **[Installation](install.md)** - Setup instructions and dependencies
+- **[Quick Start](quickstart.md)** - Your first WEC-Grid simulation
+- **[Examples](examples/basic-example.md)** - Complete workflow demonstrations
 
-## Citation
+## Support
 
-If you use WEC-Grid in your research, please cite:
+- **Documentation**: [acep-uaf.github.io/WEC-Grid](https://acep-uaf.github.io/WEC-Grid/)
+- **Repository**: [github.com/acep-uaf/WEC-GRID](https://github.com/acep-uaf/WEC-GRID)
+- **Contact**: barajale@oregonstate.edu
 
-```bibtex
-@software{wecgrid2025,
-  title={WEC-Grid: Integrating Wave Energy Converter Models into Power System Simulations},
-  author={Alexander Barajas-Ritchie},
-  year={2025},
-  url={https://github.com/acep-uaf/WEC-GRID},
-  institution={Alaska Center for Energy and Power, University of Alaska Fairbanks}
-}
-```
+## Acknowledgments
 
-## License
+This work is supported by the U.S. Department of Energy Office of Energy Efficiency and Renewable Energy, Water Power Technology Office (Grant #DE-EE0009445), University of Alaska Fairbanks, and Pacific Northwest National Laboratory.
 
-WEC-Grid is released under the MIT License. See [LICENSE](https://github.com/acep-uaf/WEC-GRID/blob/main/LICENSE) for details.
+
+## Future Work
+
+- Fault Analysis
+- PowerFactory API
+- Dynamic Simulation
