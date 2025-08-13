@@ -1,5 +1,5 @@
 """
-PSS®E Modeler - Barebones Implementation
+PSS®E Modeler
 """
 
 # Standard Libraries
@@ -24,6 +24,19 @@ from ..wec.wecfarm import WECFarm
 
 @contextlib.contextmanager
 def silence_stdout():
+    """Context manager to suppress stdout output.
+    
+    This utility function redirects stdout to devnull temporarily, which is useful
+    for suppressing verbose output from the PSS®E Python API during initialization.
+    
+    Yields:
+        None: Context where stdout is suppressed.
+        
+    Example:
+        with silence_stdout():
+            # PSS®E API calls with suppressed output
+            psspy.psseinit(50)
+    """
     new_target = open(os.devnull, 'w')
     old_stdout = sys.stdout
     sys.stdout = new_target
@@ -33,10 +46,93 @@ def silence_stdout():
         sys.stdout = old_stdout
         
 class PSSEModeler(PowerSystemModeler):
+    """PSS®E power system modeling interface.
+    
+    This class provides a comprehensive interface for power system modeling and simulation
+    using Siemens PSS®E software. It inherits from the PowerSystemModeler abstract base
+    class and implements PSS®E-specific functionality for grid analysis, WEC farm integration,
+    and time-series simulation.
+    
+    The PSSEModeler handles PSS®E case file loading, power flow solutions, component
+    modifications, and data extraction. It supports both .sav (saved case) and .raw
+    (raw data) file formats and provides methods for dynamic simulation with WEC farms.
+    
+    Args:
+        engine (Any): The WEC-GRID simulation engine containing case configuration,
+            time management, and WEC farm definitions. Must have attributes for
+            case_file, time, and wec_farms.
+    
+    Attributes:
+        engine (Any): Reference to the simulation engine.
+        grid (GridState): Current grid state containing time-series data for all
+            components (buses, generators, lines, loads).
+        sbase (float): System base MVA from PSS®E case [MVA].
+        psspy (module): PSS®E Python API module for direct API access.
+        
+    Example:
+
+        
+    Notes:
+        - Requires PSS®E software installation and valid license
+        - Compatible with PSS®E version 35.3 Python API
+        - Automatically removes reactive power limits from generators for PyPSA compatibility
+        - Supports time-series simulation with configurable load curves
+        - Grid state is captured at each simulation snapshot for analysis
+        
+    Raises:
+        ImportError: If PSS®E software is not found or not properly configured.
+        ValueError: If the provided engine lacks required attributes.
+    """
     def __init__(self, engine: Any):
+        """Initialize the PSSEModeler with the simulation engine.
+        
+        Creates a new PSSEModeler instance and calls the parent PowerSystemModeler
+        constructor to set up the basic modeling framework. The engine object must
+        contain case file information, time configuration, and WEC farm definitions.
+        
+        Args:
+            engine (Any): WEC-GRID simulation engine with the following required attributes:
+                - case_file (str): Path to PSS®E case file (.sav or .raw)
+                - time: Time management object with start_time and snapshots
+                - wec_farms (List[WECFarm]): List of WEC farm objects for integration
+                
+        Note:
+            This method only performs basic initialization. Call ``init_api()`` after
+            instantiation to initialize the PSS®E environment and load the case file.
+            
+        Example:
+
+        """
         super().__init__(engine)
 
     def __repr__(self) -> str:
+        """Return a formatted string representation of the PSSEModeler.
+        
+        Provides a tree-style summary of the PSS®E model including the case name,
+        component counts, and system base MVA. This representation gives users
+        a quick overview of the loaded grid model structure.
+        
+        Returns:
+            str: Multi-line string representation showing:
+                - Case file name
+                - Number of buses, generators, loads, and lines
+                - System base MVA [MVA]
+                
+        Example:
+            >>> print(modeler)
+            psse:
+            ├─ case: IEEE_14_bus.sav
+            ├─ buses: 14
+            ├─ generators: 5
+            ├─ loads: 11
+            └─ lines: 20
+            
+            Sbase: 100.0 MVA
+            
+        Note:
+            This method requires that ``init_api()`` has been called successfully
+            and that grid state data is available.
+        """
         return (
             f"psse:\n"
             f"├─ case: {self.engine.case_name}\n"
@@ -49,7 +145,29 @@ class PSSEModeler(PowerSystemModeler):
         )
         
     def init_api(self) -> bool:
-        """Initialize the PSS®E environment and load the case."""
+        """Initialize the PSS®E environment and load the case.
+        
+        This method sets up the PSS®E Python API, loads the specified case file,
+        and performs initial power flow solution. It also removes reactive power
+        limits on generators and takes an initial snapshot.
+        
+        Returns:
+            bool: True if initialization is successful, False otherwise.
+            
+        Raises:
+            ImportError: If PSS®E is not found or not configured correctly.
+            
+        Notes:
+            The following PSS®E API calls are used for initialization:
+            
+            - ``psseinit()``: Initialize PSS®E environment
+            - ``case()`` or ``read()``: Load case file (.sav or .raw)
+            - ``sysmva()``: Get system MVA base
+                Returns: System base MVA [MVA]
+            - ``fnsl()``: Solve power flow
+            - ``solved()``: Check solution status
+                Returns: 0 = converged, 1 = not converged [dimensionless]
+        """
         Debug = False  # Set to True for debugging output
         try:
             with silence_stdout():
@@ -100,7 +218,20 @@ class PSSEModeler(PowerSystemModeler):
         return True
 
     def solve_powerflow(self) -> bool:
-        """Run powerflow and update self.grid."""
+        """Run power flow solution and check convergence.
+        
+        Executes the PSS®E power flow solver using the Newton-Raphson method
+        and verifies that the solution converged successfully.
+        
+        Returns:
+            bool: True if power flow converged, False otherwise.
+            
+        Notes:
+            The following PSS®E API calls are used:
+            
+            - ``fnsl()``: Full Newton-Raphson power flow solution
+            - ``solved()``: Check if power flow solution converged (0 = converged)
+        """
         ierr = self.psspy.fnsl()
         ival = self.psspy.solved()
         if ierr != 0 or ival != 0:
@@ -111,9 +242,23 @@ class PSSEModeler(PowerSystemModeler):
         #TODO not sure if I should be calling take_snapshot here or in simulate? maybe both?
 
     def adjust_reactive_lim(self) -> bool:
-        """
-        Adjusts all generators in the PSSE case to remove reactive power limits
-        by setting QT = +9999 and QB = -9999.
+        """Remove reactive power limits from all generators.
+        
+        Adjusts all generators in the PSS®E case to remove reactive power limits
+        by setting QT = +9999 and QB = -9999. This is used to more closely align 
+        the modeling behavior between PSS®E and PyPSA.
+        
+        Returns:
+            bool: True if successful, False otherwise.
+            
+        Notes:
+            The following PSS®E API calls are used:
+            
+            - ``amachint()``: Get all generator bus numbers
+                Returns: Bus numbers [dimensionless]
+            - ``machine_chng_4()``: Modify generator reactive power limits
+                - Sets QT (Q max) to 9999.0 [MVAr]
+                - Sets QB (Q min) to -9999.0 [MVAr]
         """
         ierr, gen_buses = self.psspy.amachint(string=["NUMBER"])
         if ierr > 0:
@@ -134,20 +279,39 @@ class PSSEModeler(PowerSystemModeler):
         self.take_snapshot(timestamp=self.engine.time.start_time)
         return True
 
-    #def add_wec_farm(self, model: str, from_bus: int, to_bus: int) -> bool:
+
     def add_wec_farm(self, farm: WECFarm) -> bool:
-        """Inject a WEC farm into the PSS®E model.
+        """Add a WEC farm to the PSS®E model.
 
-        Adds a WEC farm to the PSSE model by:
-        1. Adding a new bus.
-        2. Adding a generator to the bus to represent the farm.
-        3. Adding a branch (line) connecting the new bus to an existing bus.
+        This method adds a WEC farm to the PSS®E model by creating the necessary
+        electrical infrastructure: a new bus for the WEC farm, a generator on that bus,
+        and a transmission line connecting it to the existing grid.
 
-        Parameters:
-        - model (str): Model identifier for the WEC system.
-        - ID (int): Unique identifier for the WEC system.
-        - ibus (int): New bus ID for the WEC system. (WEC BUS)
-        - jbus (int): Existing bus ID to connect the line from.
+        Args:
+            farm (WECFarm): The WEC farm object containing connection details.
+
+        Returns:
+            bool: True if the farm is added successfully, False otherwise.
+
+        Raises:
+            ValueError: If the WEC farm cannot be added due to invalid parameters.
+
+        Notes:
+            The following PSS®E API calls are used:
+            
+            - ``busdat()``: Get base voltage of connecting bus
+                Returns: Base voltage [kV]
+            - ``bus_data_4()``: Add new WEC bus (PV type)
+                - Base voltage [kV]
+            - ``plant_data_4()``: Add plant data to WEC bus
+            - ``machine_data_4()``: Add WEC generator to bus
+                - PG: Active power generation [MW]
+            - ``branch_data_3()``: Add transmission line from WEC bus to grid
+                - R: Resistance [pu]
+                - X: Reactance [pu]
+                - RATEA: Rating A [MVA]
+        TODO:
+            Fix the hardcoded line R, X, and RATEA values
         """
     
         ierr, rval = self.psspy.busdat(farm.connecting_bus, "BASE")
@@ -156,15 +320,12 @@ class PSSEModeler(PowerSystemModeler):
             print(f"Error retrieving base voltage for bus {farm.connecting_bus}. PSS®E error code: {ierr}")
 
         # Step 1: Add a new bus
-        
-        
-        
         ierr = self.psspy.bus_data_4(
             ibus=farm.bus_location,
             inode=0, 
-            intgar1=2, # Bus type (2 = PV bus ), area, zone, owner
+            intgar1=2, # Bus type (2 = PV bus)
             realar1=rval, # Base voltage of the from bus in kV
-            name= f"WEC BUS {farm.bus_location}", # Name of the bus
+            name=f"WEC BUS {farm.bus_location}",
         )
         if ierr > 0:
             print(f"Error adding bus {farm.bus_location}. PSS®E error code: {ierr}")
@@ -172,24 +333,21 @@ class PSSEModeler(PowerSystemModeler):
 
         # Step 2: Add plant data
         ierr = self.psspy.plant_data_4(
-            ibus=farm.bus_location, # add plant a wec bus
+            ibus=farm.bus_location,
             inode=0
         )
         if ierr > 0:
             print(f"Error adding plant data to bus {farm.bus_location}. PSS®E error code: {ierr}")
             return False
         
-        
+        # Step 3: Add generator
         ierr = self.psspy.machine_data_4(
             ibus=farm.bus_location, 
-            id = f"W{farm.id}", # maybe should just be a number? come back
-            realar1= 0.0, # PG, machine active power (0.0 by default)
+            id=f"W{farm.id}",
+            realar1=0.0, # PG, machine active power (0.0 by default)
         )
-
         if ierr > 0:
-            print(
-                f"Error adding generator {farm.id} to bus {farm.bus_location}. PSS®E error code: {ierr}"
-            )
+            print(f"Error adding generator {farm.id} to bus {farm.bus_location}. PSS®E error code: {ierr}")
             return False
 
         # Step 4: Add a branch (line) connecting the existing bus to the new bus
@@ -199,26 +357,51 @@ class PSSEModeler(PowerSystemModeler):
         ratings_array = [0.0] * 12
         ratings_array[0] = 130.00  # RATEA
         ierr = self.psspy.branch_data_3(
-            ibus=farm.bus_location, # from bus
-            jbus=farm.connecting_bus,  # to bus
+            ibus=farm.bus_location,
+            jbus=farm.connecting_bus,
             realar=realar_array,
             namear="WEC Line"
         )
         if ierr > 0:
-            print(
-                f"Error adding branch from {farm.bus_location} to {farm.connecting_bus}. PSS®E error code: {ierr}"
-            )
+            print(f"Error adding branch from {farm.bus_location} to {farm.connecting_bus}. PSS®E error code: {ierr}")
             return False
 
-        self.grid = GridState()  # TODO Reset state after adding farm but should be a bette way
+        self.grid = GridState()  # TODO: Reset state after adding farm, but should be a better way
         self.solve_powerflow()
         self.take_snapshot(timestamp=self.engine.time.start_time)
         return True
     
-    
 
     def simulate(self, load_curve: Optional[pd.DataFrame] = None) -> bool:
-        """Run a time-series simulation with WEC data injection."""
+        """Simulate the PSS®E grid over time with WEC farm updates.
+        
+        Simulates the PSS®E grid over a series of time snapshots, updating WEC farm 
+        generator outputs and optionally bus loads at each time step. For each snapshot,
+        the method updates generator power outputs, applies load changes if provided,
+        solves the power flow, and captures the grid state.
+        
+        Args:
+            load_curve (Optional[pd.DataFrame]): DataFrame containing load values for 
+                each bus at each snapshot. Index should be snapshots, columns should 
+                be bus IDs. If None, loads remain constant.
+
+        Returns:
+            bool: True if the simulation completes successfully.
+            
+        Raises:
+            Exception: If there is an error setting generator power, setting load data, 
+                or solving the power flow at any snapshot.
+
+        Notes:
+            The following PSS®E API calls are used for simulation:
+            
+            - ``machine_chng_4()``: Update WEC generator active power output
+                - PG: Active power generation [MW]
+            - ``load_data_6()``: Update bus load values (if load_curve provided)
+                - P: Active power load [MW]
+                - Q: Reactive power load [MVAr]
+            - ``fnsl()``: Solve power flow at each time step
+        """
         
 
         for snapshot in tqdm(self.engine.time.snapshots, desc="PSS®E Simulating", unit="step"):
@@ -245,52 +428,64 @@ class PSSEModeler(PowerSystemModeler):
         return True
 
     def take_snapshot(self, timestamp: datetime) -> None:
-        """
-            TODO fill in later
+        """Take a snapshot of the current grid state.
+        
+        Captures the current state of all grid components (buses, generators, lines,
+        and loads) at the specified timestamp and updates the grid state object.
+        
+        Args: 
+            timestamp (datetime): The timestamp for the snapshot.
+
+        Returns:
+            None
         """
         # --- Append time-series for each component ---
         self.grid.update("bus",    timestamp, self.snapshot_buses())
         self.grid.update("gen",    timestamp, self.snapshot_generators())
         self.grid.update("line", timestamp, self.snapshot_lines())
         self.grid.update("load",   timestamp, self.snapshot_loads())
-
-
-    
+ 
     def snapshot_buses(self) -> pd.DataFrame:
-        """
-        Returns a snapshot DataFrame of all buses following GridState standard.
-        Includes: bus, bus_name, type, p, q, v_mag, angle_deg, base, status
+        """Capture current bus state from PSS®E.
+        
+        Builds a Pandas DataFrame of the current bus state for the loaded PSS®E grid 
+        using the PSS®E API. The DataFrame is formatted according to the GridState 
+        specification and includes bus voltage, power injection, and load data.
+        
+        Returns:
+            pd.DataFrame: DataFrame with columns: bus, bus_name, type, p, q, v_mag, 
+                angle_deg, base. Index represents individual buses.
+                
+        Raises:
+            RuntimeError: If there is an error retrieving bus snapshot data from PSS®E.
 
-        abuschar()
-            'NAME' Bus name (12 characters)
-          
-        abusint()  
-            'NUMBER' Bus number
-            'TYPE' Bus type code
-
-        abusreal()
-            'BASE' Bus base voltage, in kV
-            'PU' Actual bus voltage magnitude, in pu
-            'ANGLE' Bus voltage phase angle, in radians
+        Notes:
+            The following PSS®E API calls are used to retrieve bus snapshot data:
             
-        amachint() - Bus number and type
-            'NUMBER' Bus number
-        
-        amachreal()
-            'PGEN' Active power output, in MW
-            'QGEN' Reactive power output, in Mvar
-
-        aloadint()
-            'NUMBER' Bus number
-        
-        aloadcplx()
-            'TOTALACT' Actual in-service load (in MW and Mvar)
-
+            Bus Information:
+            - ``abuschar()``: Bus names ('NAME')
+                Returns: Bus names [string]
+            - ``abusint()``: Bus numbers and types ('NUMBER', 'TYPE')  
+                Returns: Bus numbers [dimensionless], Bus types [dimensionless]
+            - ``abusreal()``: Bus voltages and base kV ('PU', 'ANGLED', 'BASE')
+                Returns: Voltage magnitude [pu], Voltage angle [degrees], Base voltage [kV]
+            
+            Generator Data:
+            - ``amachint()``: Generator bus numbers ('NUMBER')
+                Returns: Bus numbers [dimensionless]
+            - ``amachreal()``: Generator power output ('PGEN', 'QGEN')
+                Returns: Active power [MW], Reactive power [MVAr]
+            
+            Load Data:
+            - ``aloadint()``: Load bus numbers ('NUMBER')
+                Returns: Bus numbers [dimensionless]
+            - ``aloadcplx()``: Load power consumption ('TOTALACT')
+                Returns: Complex power [MW + j*MVAr]
         """
         # --- Pull data from PSS®E ---
         ierr1, names = self.psspy.abuschar(string=["NAME"])
         ierr2, ints   = self.psspy.abusint(string=["NUMBER", "TYPE"])
-        ierr3, reals  = self.psspy.abusreal(string=["PU", "ANGLE", "BASE"])
+        ierr3, reals  = self.psspy.abusreal(string=["PU", "ANGLED", "BASE"])
         ierr4, gens   = self.psspy.amachint(string=["NUMBER"])
         ierr5, pgen   = self.psspy.amachreal(string=["PGEN"])
         ierr6, qgen   = self.psspy.amachreal(string=["QGEN"])
@@ -352,8 +547,29 @@ class PSSEModeler(PowerSystemModeler):
         df.attrs["df_type"] = "BUS"
         return df
 
-
     def snapshot_generators(self) -> pd.DataFrame:
+        """Capture current generator state from PSS®E.
+        
+        Builds a Pandas DataFrame of the current generator state for the loaded PSS®E grid 
+        using the PSS®E API. The DataFrame includes generator power output, base MVA, 
+        and status information.
+        
+        Returns:
+            pd.DataFrame: DataFrame with columns: gen, bus, p, q, base, status.
+                Generator names are formatted as "bus_count" (e.g., "1_1", "1_2").
+                
+        Raises:
+            RuntimeError: If there is an error retrieving generator data from PSS®E.
+
+        Notes:
+            The following PSS®E API calls are used to retrieve generator data:
+            
+            - ``amachint()``: Generator bus numbers and status ('NUMBER', 'STATUS')
+                Returns: Bus numbers [dimensionless], Status codes [dimensionless]
+            - ``amachreal()``: Generator power and base MVA ('PGEN', 'QGEN', 'MBASE')
+                Returns: Active power [MW], Reactive power [MVAr], Base MVA [MVA]
+        """
+        
         ierr1, int_arr  = self.psspy.amachint(string=["NUMBER", "STATUS"])
         ierr2, real_arr = self.psspy.amachreal(string=["PGEN", "QGEN", "MBASE"])
         if any(ierr != 0 for ierr in [ierr1, ierr2]):
@@ -383,10 +599,31 @@ class PSSEModeler(PowerSystemModeler):
         df = pd.DataFrame(rows)
         df.attrs["df_type"] = "GEN"
         return df
-    
-        
+       
     def snapshot_lines(self) -> pd.DataFrame:
-        """Snapshot of transmission lines (branches) in standardized format."""
+        """Capture current transmission line state from PSS®E.
+        
+        Builds a Pandas DataFrame of the current transmission line state for the loaded 
+        PSS®E grid using the PSS®E API. The DataFrame includes line loading percentages
+        and connection information.
+        
+        Returns:
+            pd.DataFrame: DataFrame with columns: line, ibus, jbus, line_pct, status.
+                Line names are formatted as "Line_ibus_jbus_count".
+                
+        Raises:
+            RuntimeError: If there is an error retrieving line data from PSS®E.
+
+        Notes:
+            The following PSS®E API calls are used to retrieve line data:
+            
+            - ``abrnchar()``: Line IDs ('ID')
+                Returns: Line identifiers [string]
+            - ``abrnint()``: Line bus connections and status ('FROMNUMBER', 'TONUMBER', 'STATUS')
+                Returns: From bus [dimensionless], To bus [dimensionless], Status [dimensionless]
+            - ``abrnreal()``: Line loading percentage ('PCTRATE')
+                Returns: Line loading [%]
+        """
 
         ierr1, carray = self.psspy.abrnchar(string=["ID"])
         ids = carray[0]
@@ -425,11 +662,28 @@ class PSSEModeler(PowerSystemModeler):
         return df
 
     def snapshot_loads(self) -> pd.DataFrame:
-        """
-        Snapshot of all in-service loads in standardized format.
-
+        """Capture current load state from PSS®E.
+        
+        Builds a Pandas DataFrame of the current load state for the loaded PSS®E grid 
+        using the PSS®E API. The DataFrame includes load power consumption and status
+        information for all buses with loads.
+        
         Returns:
-            DataFrame with columns: load, bus, p, q, base, status
+            pd.DataFrame: DataFrame with columns: load, bus, p, q, base, status.
+                Load names are formatted as "Load_bus_count".
+                
+        Raises:
+            RuntimeError: If there is an error retrieving load data from PSS®E.
+
+        Notes:
+            The following PSS®E API calls are used to retrieve load data:
+            
+            - ``aloadchar()``: Load IDs ('ID')
+                Returns: Load identifiers [string]
+            - ``aloadint()``: Load bus numbers and status ('NUMBER', 'STATUS')
+                Returns: Bus numbers [dimensionless], Status codes [dimensionless]
+            - ``aloadcplx()``: Load power consumption ('TOTALACT')
+                Returns: Complex power consumption [MW + j*MVAr]
         """
         # --- Load character data: IDs
         ierr1, char_arr = self.psspy.aloadchar(string=["ID"])

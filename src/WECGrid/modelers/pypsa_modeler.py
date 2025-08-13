@@ -48,13 +48,105 @@ from .power_system_modeler import PowerSystemModeler
 # e.g.: import pypsa
 
 class PyPSAModeler(PowerSystemModeler):
+    """PyPSA power system modeling interface.
+    
+    This class provides a comprehensive interface for power system modeling and simulation
+    using PyPSA (Python for Power System Analysis). It inherits from the PowerSystemModeler 
+    abstract base class and implements PyPSA-specific functionality for grid analysis, 
+    WEC farm integration, and time-series simulation.
+    
+    The PyPSAModeler handles PyPSA network creation from PSS®E case files, power flow 
+    solutions, component modifications, and data extraction. It supports both .sav (saved case) 
+    and .raw (raw data) file formats and provides methods for dynamic simulation with WEC farms.
+    
+    Args:
+        engine (Any): The WEC-GRID simulation engine containing case configuration,
+            time management, and WEC farm definitions. Must have attributes for
+            case_file, time, and wec_farms.
+    
+    Attributes:
+        engine (Any): Reference to the simulation engine.
+        grid (GridState): Current grid state containing time-series data for all
+            components (buses, generators, lines, loads).
+        network (Optional[pypsa.Network]): PyPSA Network object for power system analysis.
+        sbase (float): System base MVA from case file [MVA].
+        parser: GRG PSS®E case file parser object for data extraction.
+        
+    Example:
+        >>> from wecgrid.engine import WECGridEngine
+        >>> engine = WECGridEngine(case_file="IEEE_14_bus.raw")
+        >>> pypsa_model = PyPSAModeler(engine)
+        >>> pypsa_model.init_api()
+        >>> pypsa_model.simulate()
+        
+    Notes:
+        - Compatible with PyPSA version 0.21+ for power system analysis
+        - Uses GRG PSS®E parser for case file import and conversion
+        - Automatically converts PSS®E impedance values to PyPSA format
+        - Supports time-series simulation with configurable load curves
+        - Grid state is captured at each simulation snapshot for analysis
+        - Provides validation against PSS®E results for cross-platform verification
+        
+    Raises:
+        ImportError: If PyPSA or required dependencies are not installed.
+        ValueError: If the provided engine lacks required attributes.
+    """
+    
     def __init__(self, engine: Any):
+        """Initialize the PyPSAModeler with the simulation engine.
+        
+        Creates a new PyPSAModeler instance and calls the parent PowerSystemModeler
+        constructor to set up the basic modeling framework. The engine object must
+        contain case file information, time configuration, and WEC farm definitions.
+        
+        Args:
+            engine (Any): WEC-GRID simulation engine with the following required attributes:
+                - case_file (str): Path to PSS®E case file (.sav or .raw)
+                - time: Time management object with start_time and snapshots
+                - wec_farms (List[WECFarm]): List of WEC farm objects for integration
+                
+        Note:
+            This method only performs basic initialization. Call ``init_api()`` after
+            instantiation to initialize the PyPSA network and load the case file.
+            
+        Example:
+            >>> engine = WECGridEngine(case_file="test_case.raw")
+            >>> modeler = PyPSAModeler(engine)
+            >>> modeler.init_api()  # Required for PyPSA functionality
+        """
         super().__init__(engine)
 
         self.network: Optional[pypsa.Network] = None
     
 
     def __repr__(self) -> str:
+        """Return a formatted string representation of the PyPSAModeler.
+        
+        Provides a tree-style summary of the PyPSA model including the case name,
+        component counts, and system base MVA. This representation gives users
+        a quick overview of the loaded grid model structure.
+        
+        Returns:
+            str: Multi-line string representation showing:
+                - Case file name
+                - Number of buses, generators, loads, and lines
+                - System base MVA [MVA]
+                
+        Example:
+            >>> print(modeler)
+            pypsa:
+            ├─ case: IEEE_14_bus.raw
+            ├─ buses: 14
+            ├─ generators: 5
+            ├─ loads: 11
+            └─ lines: 20
+            
+            Sbase: 100.0 MVA
+            
+        Note:
+            This method requires that ``init_api()`` has been called successfully
+            and that grid state data is available.
+        """
         return (
             f"pypsa:\n"
             f"├─ case: {self.engine.case_name}\n"
@@ -68,6 +160,32 @@ class PyPSAModeler(PowerSystemModeler):
         
 
     def init_api(self) -> bool:
+        """Initialize the PyPSA environment and load the case.
+        
+        This method sets up the PyPSA network by importing the PSS®E case file,
+        creating the network structure, and performing initial power flow solution.
+        It also takes an initial snapshot of the grid state.
+        
+        Returns:
+            bool: True if initialization is successful, False otherwise.
+            
+        Raises:
+            ImportError: If PyPSA or GRG dependencies are not found.
+            ValueError: If case file cannot be parsed or is invalid.
+            
+        Notes:
+            The initialization process includes:
+            
+            - Parsing PSS®E case file using GRG parser
+            - Creating PyPSA Network with system base MVA [MVA]
+            - Converting PSS®E impedance values to PyPSA format
+            - Adding buses with voltage limits [kV] and control types
+            - Adding lines with impedance [Ohm] and ratings [MVA]
+            - Adding generators with power limits [MW], [MVAr]
+            - Adding loads with power consumption [MW], [MVAr]
+            - Adding transformers and shunt impedances
+            - Solving initial power flow
+        """
         if not self.import_raw_to_pypsa(): return False
         if not self.solve_powerflow(): return False
         self.take_snapshot(timestamp=self.engine.time.start_time)  # populates self.grid
@@ -75,6 +193,28 @@ class PyPSAModeler(PowerSystemModeler):
         return True
         
     def solve_powerflow(self) -> bool:
+        """Run power flow solution and check convergence.
+        
+        Executes the PyPSA power flow solver with suppressed logging output
+        and verifies that the solution converged successfully for all snapshots.
+        
+        Returns:
+            bool: True if power flow converged for all snapshots, False otherwise.
+            
+        Notes:
+            The power flow solution process:
+            
+            - Temporarily suppresses PyPSA logging to reduce output
+            - Calls ``network.pf()`` for power flow calculation
+            - Checks convergence status for all snapshots
+            - Reports any failed snapshots for debugging
+            
+        Example:
+            >>> if modeler.solve_powerflow():
+            ...     print("Power flow converged successfully")
+            ... else:
+            ...     print("Power flow failed to converge")
+        """
         
         # Suppress PyPSA logging
         logger = logging.getLogger("pypsa")
@@ -99,9 +239,48 @@ class PyPSAModeler(PowerSystemModeler):
         
      
     def import_raw_to_pypsa(self) -> bool:
-        """
-        Builds a PyPSA Network from a parsed PSS/E RAW case file.
-        Only sets necessary fields for a valid power flow.
+        """Import PSS®E case file and build PyPSA Network.
+        
+        Builds a PyPSA Network from a parsed PSS®E RAW case file using the GRG parser.
+        Converts PSS®E data structures and impedance values to PyPSA format, including
+        buses, lines, generators, loads, transformers, and shunt impedances.
+        
+        Returns:
+            bool: True if case import is successful, False otherwise.
+            
+        Raises:
+            Exception: If case file parsing fails or case is invalid.
+            
+        Notes:
+            The import process includes:
+            
+            Bus Data:
+            - Bus numbers, names, and base voltages [kV]
+            - Voltage magnitude setpoints and limits [pu]
+            - Bus type mapping (PQ, PV, Slack)
+            
+            Line Data:
+            - Resistance and reactance converted from [pu] to [Ohm]
+            - Conductance and susceptance converted from [pu] to [Siemens]
+            - Thermal ratings [MVA]
+            
+            Generator Data:
+            - Active and reactive power setpoints [MW], [MVAr]
+            - Power limits and control modes
+            - Generator status and carrier type
+            
+            Load Data:
+            - Active and reactive power consumption [MW], [MVAr]
+            - Load status and bus assignment
+            
+            Transformer Data:
+            - Impedance values normalized to transformer base [pu]
+            - Tap ratios and phase shift angles [degrees]
+            - Thermal ratings [MVA]
+            
+            Shunt Data:
+            - Conductance and susceptance [Siemens]
+            - Status and bus assignment
         """
         try:
             # Temporarily silence GRG's print_err
@@ -302,6 +481,44 @@ class PyPSAModeler(PowerSystemModeler):
 
 
     def add_wec_farm(self, farm) -> bool:
+        """Add a WEC farm to the PyPSA model.
+
+        This method adds a WEC farm to the PyPSA model by creating the necessary
+        electrical infrastructure: a new bus for the WEC farm, a generator on that bus,
+        and a transmission line connecting it to the existing grid.
+
+        Args:
+            farm (WECFarm): The WEC farm object containing connection details including
+                bus_location, connecting_bus, and farm identification.
+
+        Returns:
+            bool: True if the farm is added successfully, False otherwise.
+
+        Raises:
+            Exception: If the WEC farm cannot be added due to PyPSA errors.
+
+        Notes:
+            The WEC farm addition process includes:
+            
+            Bus Creation:
+            - Creates new bus at farm.bus_location
+            - Uses same voltage level as connecting bus [kV]
+            - Sets AC carrier type for electrical connection
+            
+            Line Creation:
+            - Adds transmission line between WEC bus and grid
+            - Uses hardcoded impedance values [Ohm]
+            - Sets thermal rating [MVA]
+            
+            Generator Creation:
+            - Adds WEC generator with wave energy carrier type
+            - Initial power setpoint of 0.0 [MW]
+            - PV control mode for voltage regulation
+            
+        TODO:
+            Replace hardcoded line impedance values with calculated values
+            based on farm specifications and connection distance.
+        """
         try:
             self.network.add("Bus",
                 name=str(farm.bus_location),
@@ -334,6 +551,43 @@ class PyPSAModeler(PowerSystemModeler):
     
     
     def simulate(self, load_curve=None) -> bool:
+        """Simulate the PyPSA grid over time with WEC farm updates.
+        
+        Simulates the PyPSA grid over a series of time snapshots, updating WEC farm 
+        generator outputs and optionally bus loads at each time step. For each snapshot,
+        the method updates generator power outputs, applies load changes if provided,
+        solves the power flow, and captures the grid state.
+        
+        Args:
+            load_curve (Optional[pd.DataFrame]): DataFrame containing load values for 
+                each bus at each snapshot. Index should be snapshots, columns should 
+                be bus IDs. If None, loads remain constant.
+
+        Returns:
+            bool: True if the simulation completes successfully.
+            
+        Raises:
+            Exception: If there is an error setting generator power, setting load data, 
+                or solving the power flow at any snapshot.
+
+        Notes:
+            The simulation process includes:
+            
+            WEC Generator Updates:
+            - Updates WEC generator power setpoints [MW]
+            - Converts from per-unit to MW using farm base power
+            - Uses farm power curve data for each time snapshot
+            
+            Load Updates (if load_curve provided):
+            - Updates bus load values [MW] 
+            - Converts from per-unit to MW using system base
+            - Maps bus numbers to PyPSA load component names
+            
+            Power Flow Solution:
+            - Solves power flow at each time step
+            - Captures grid state snapshots for analysis
+            - Provides progress indication via tqdm
+        """
         # map: bus number (str) -> load name (index)
         bus_to_load = self.network.loads['bus'].astype(str).to_dict()
         inv_map = {v: k for k, v in bus_to_load.items()}  # bus->load
@@ -364,8 +618,20 @@ class PyPSAModeler(PowerSystemModeler):
     
     
     def take_snapshot(self, timestamp: datetime) -> None:
-        """
-            TODO fill in later
+        """Take a snapshot of the current grid state.
+        
+        Captures the current state of all grid components (buses, generators, lines,
+        and loads) at the specified timestamp and updates the grid state object.
+        
+        Args: 
+            timestamp (datetime): The timestamp for the snapshot.
+
+        Returns:
+            None
+            
+        Note:
+            This method calls individual snapshot methods for each component type
+            and updates the internal grid state with time-series data.
         """
         self.grid.update("bus",    timestamp, self.snapshot_buses())
         self.grid.update("gen",    timestamp, self.snapshot_generators())
@@ -373,11 +639,32 @@ class PyPSAModeler(PowerSystemModeler):
         self.grid.update("load",   timestamp, self.snapshot_loads())
 
     def snapshot_buses(self) -> pd.DataFrame:
-        """
-        PyPSA bus snapshot with WEC-Grid schema (all powers in per-unit on system S_base).
-
-        Columns:
-        bus, bus_name, type, p, q, v_mag, angle_deg, base
+        """Capture current bus state from PyPSA.
+        
+        Builds a Pandas DataFrame of the current bus state for the loaded PyPSA network.
+        The DataFrame is formatted according to the GridState specification and includes 
+        bus voltage, power injection, and control data.
+        
+        Returns:
+            pd.DataFrame: DataFrame with columns: bus, bus_name, type, p, q, v_mag, 
+                angle_deg, base. Index represents individual buses.
+                
+        Notes:
+            The following PyPSA network data is used to create bus snapshots:
+            
+            Bus Information:
+            - Bus names and numbers (converted from string indices) [dimensionless]
+            - Bus control types (PQ, PV, Slack) [string]
+            - Base voltage levels [kV]
+            
+            Electrical Quantities:
+            - Active and reactive power injections [MW], [MVAr] → [pu]
+            - Voltage magnitude [pu]
+            - Voltage angle [radians] → [degrees]
+            
+            Time Series Data:
+            - Uses latest snapshot from network.snapshots
+            - Defaults to steady-state values if no time series available
         """
         n = self.network
         buses = n.buses  # index = bus names (strings)
@@ -415,10 +702,33 @@ class PyPSAModeler(PowerSystemModeler):
             
 
     def snapshot_generators(self) -> pd.DataFrame:
+        """Capture current generator state from PyPSA.
+        
+        Builds a Pandas DataFrame of the current generator state for the loaded PyPSA network.
+        The DataFrame includes generator power output, base power, and status information.
+        
+        Returns:
+            pd.DataFrame: DataFrame with columns: gen, bus, p, q, base, status.
+                Generator names are formatted as "bus_count" (e.g., "1_1", "1_2").
+                
+        Notes:
+            The following PyPSA network data is used to create generator snapshots:
+            
+            Generator Information:
+            - Generator names and bus assignments [dimensionless]
+            - Active and reactive power output [MW], [MVAr] → [pu]
+            - Generator status and availability [dimensionless]
+            
+            Time Series Data:
+            - Uses latest snapshot from generators_t for power values
+            - Uses generator 'active' attribute for status if available
+            - Per-bus counter for consistent naming convention
+            
+            Power Conversion:
+            - All power values converted to per-unit on system base
+            - System base MVA used for normalization [MVA]
         """
-        PyPSA generator snapshot with WEC-Grid schema (powers in p.u. on system S_base).
-        Generator names follow "<bus>_<counter>" convention like PSS®E.
-        """
+        
         n = self.network
         gens = n.generators
         sbase = self.sbase
@@ -466,11 +776,36 @@ class PyPSAModeler(PowerSystemModeler):
     
 
     def snapshot_lines(self) -> pd.DataFrame:
+        """Capture current transmission line state from PyPSA.
+        
+        Builds a Pandas DataFrame of the current transmission line state for the loaded 
+        PyPSA network. The DataFrame includes line loading percentages and connection 
+        information.
+        
+        Returns:
+            pd.DataFrame: DataFrame with columns: line, ibus, jbus, line_pct, status.
+                Line names are formatted as "Line_ibus_jbus_count".
+                
+        Notes:
+            The following PyPSA network data is used to create line snapshots:
+            
+            Line Information:
+            - Line bus connections (bus0, bus1) [dimensionless]
+            - Line thermal ratings (s_nom) [MVA]
+            - Line status (assumed active = 1)
+            
+            Power Flow Data:
+            - Active power flow at both ends [MW]
+            - Reactive power flow at both ends [MVAr]
+            - Apparent power calculated from P and Q [MVA]
+            - Line loading as percentage of thermal rating [%]
+            
+            Naming Convention:
+            - Lines named as "Line_ibus_jbus_count" for consistency
+            - Per-bus-pair counter for multiple parallel lines
+            - Bus numbers converted from PyPSA string indices
         """
-        Snapshot of transmission lines (branches) in WEC-Grid schema.
-        Columns: line, ibus, jbus, line_pct, status
-        - line_pct is computed from apparent power flow vs s_nom at latest snapshot.
-        """
+
         n = self.network
 
         # choose latest snapshot if available
@@ -532,12 +867,32 @@ class PyPSAModeler(PowerSystemModeler):
 
 
     def snapshot_loads(self) -> pd.DataFrame:
-        """
-        Snapshot of all loads (PyPSA) in WEC-Grid schema.
-
-        Columns: load, bus, p, q, base, status
-        - p, q are per-unit on system base self.sbase
-        - load name: 'Load_{bus}_{idx}' with per-bus counter
+        """Capture current load state from PyPSA.
+        
+        Builds a Pandas DataFrame of the current load state for the loaded PyPSA network.
+        The DataFrame includes load power consumption and status information for all 
+        buses with loads.
+        
+        Returns:
+            pd.DataFrame: DataFrame with columns: load, bus, p, q, base, status.
+                Load names are formatted as "Load_bus_count".
+                
+        Notes:
+            The following PyPSA network data is used to create load snapshots:
+            
+            Load Information:
+            - Load names and bus assignments [dimensionless]
+            - Active and reactive power consumption [MW], [MVAr] → [pu]
+            - Load status from 'active' attribute [dimensionless]
+            
+            Time Series Data:
+            - Uses latest snapshot from loads_t for power values
+            - Defaults to steady-state values if no time series available
+            - Per-bus counter for consistent naming convention
+            
+            Power Conversion:
+            - All power values converted to per-unit on system base
+            - System base MVA used for normalization [MVA]
         """
         n = self.network
         sbase = float(self.sbase)
@@ -583,397 +938,3 @@ class PyPSAModeler(PowerSystemModeler):
         df.attrs["df_type"] = "LOAD"
         df.index = pd.RangeIndex(len(df))
         return df
-
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
-    # implement additional methods, e.g.
-    # def solve_powerflow(self) -> None: ...
-    # def get_bus_dataframe_t(self) -> pandas.DataFrame: ...
-
-# Local Libraries (updated with relative imports)
-#from ..utilities.util import read_paths  # Relative import for utilities/util.py
-#from ..plot.pypsa_viz import PyPSAVisualizer
-
-# # Initialize the PATHS dictionary
-# PATHS = read_paths()
-# CURR_DIR = os.path.dirname(os.path.abspath(__file__))
-
-
-# class PyPSAModeler:
-#     """
-#     A wrapper class for PyPSA network operations with WEC integration.
-
-#     This class provides methods for initializing, modifying, and analyzing power systems
-#     with integrated Wave Energy Converters using PyPSA.
-
-#     Attributes:
-#         case_file (str): Path to the case file
-#         pypsa_history (dict): History of PyPSA operations
-#         pypsa_object_history (dict): History of PyPSA objects
-#         dataframe (pd.DataFrame): Current network state
-#         flow_data (dict): Power flow data
-#         WecGridCore (object): Parent WecGridCore reference
-#         timestamp_start (datetime): Initialization timestamp
-#     """
-
-#     def __init__(self, case : str, engine: "WecGridEngine"):
-#         """
-#         Initialize PyPSA wrapper.
-
-#         Args:
-#             case (str): Path to case file
-#             WecGridCore (object): Reference to parent WecGridCore object
-
-#         Returns:
-#             None
-#         """
-#         self.case_file = case
-#         self.engine = engine
-        
-#         #Grid dfs
-#         self.bus_dataframe = pd.DataFrame()
-#         self.generator_dataframe = pd.DataFrame()
-#         self.branches_dataframe = pd.DataFrame()
-#         self.loads_dataframe = pd.DataFrame()
-#         self.two_winding_dataframe = pd.DataFrame()
-#         self.three_winding_dataframe = pd.DataFrame()
-        
-        
-#         # Wrapper 
-#         self.snapshots = engine.snapshots
-#         self.snapshot_history = []
-#         self.load_profiles = pd.DataFrame()
-#         self.viz = PyPSAVisualizer(self)
-#         self.parser = None
-        
-        
-        
-#         # API objects
-#         self.network = None
-        
-#     def init_api(self)-> bool:
-#         if self.import_raw_to_pypsa():
-#             if self.pf():
-#                 print("PyPSA software initialized")
-#                 return True
-#         else:
-#             print("Failed to initialize pyPSA network.")
-#             return False
-     
-#     def import_raw_to_pypsa(self) -> bool:
-#         """
-#         Builds a PyPSA Network from a parsed PSS/E RAW case file.
-#         Only sets necessary fields for a valid power flow.
-#         """
-#         try:
-#             # Temporarily silence GRG's print_err
-#             original_print_err = grgio.print_err
-#             grgio.print_err = lambda *args, **kwargs: None
-
-#             self.parser = parse_psse_case_file(self.case_file)
-            
-    
-#             # Restore original print_err
-#             grgio.print_err = original_print_err
-
-#             # Validate case
-#             if not self.parser or not self.parser.buses:
-#                 print("[GRG ERROR] Parsed case is empty or invalid.")
-#                 return False
-
-#             self.network = pypsa.Network(s_n_mva=self.parser.sbase)
-
-#         except Exception as e:
-#             print(f"[GRG ERROR] Failed to parse case: {e}")
-#             return False
-        
-#         self.parser.bus_lookup = {bus.i: bus for bus in self.parser.buses}
-
-#         # Mapping PSS/E bus types to PyPSA control types
-#         ide_to_ctrl = {1: "PQ", 2: "PV", 3: "Slack"}
-
-#         # --- Add Buses ---
-#         for bus in self.parser.buses:
-#             self.network.add("Bus",
-#                 name          = str(bus.i),
-#                 v_nom         = bus.basekv,        # [kV]
-#                 v_mag_pu_set  = bus.vm,             # [pu]
-#                 v_mag_pu_min  = bus.nvlo,           # [pu]
-#                 v_mag_pu_max  = bus.nvhi,           # [pu]
-#                 control       = ide_to_ctrl.get(bus.ide, "PQ"),
-#             )
-
-#         # --- Add Lines (Branches) ---
-#         for idx, br in enumerate(self.parser.branches):
-#             line_name = f"L{idx}"
-#             S_base_MVA = self.parser.sbase
-#             V_base_kV = self.network.buses.at[str(br.i), "v_nom"]
-        
-#             # Convert PSS®E p.u. values to physical units
-#             r_ohm = br.r * (V_base_kV ** 2) / S_base_MVA
-#             x_ohm = br.x * (V_base_kV ** 2) / S_base_MVA
-#             g_siemens = (br.gi + br.gj) * S_base_MVA / (V_base_kV ** 2)
-#             b_siemens = (br.bi + br.bj) * S_base_MVA / (V_base_kV ** 2)
-
-#             self.network.add("Line",
-#                 name    = line_name,
-#                 bus0    = str(br.i),
-#                 bus1    = str(br.j),
-#                 type    = "",
-#                 r       = r_ohm,
-#                 x       = x_ohm,
-#                 g       = g_siemens,
-#                 b       = b_siemens,
-#                 s_nom   = br.ratea,
-#                 s_nom_extendable = False,
-#                 length  = 0.0,
-#                 v_ang_min = -inf,
-#                 v_ang_max = inf,
-#             )
-#             # print(f"Line {line_name}:")
-#             # print(f" bus0 : {str(br.i)} - bus1: {str(br.j)}")
-#             # print(f"  Original values (p.u.): r={br.r}, x={br.x}, g={br.gi + br.gj}, b={br.bi + br.bj}")
-#             # print(f"  Converted values (physical units): r_ohm={r_ohm:.6f}, x_ohm={x_ohm:.6f}, g_siemens={g_siemens:.6f}, b_siemens={b_siemens:.6f}")
-            
-            
-#         # --- Add Generators ---
-#         for idx, g in enumerate(self.parser.generators):
-#             if g.stat != 1:
-#                 continue
-#             gname = f"G{idx}"
-#             S_base_MVA = self.parser.sbase
-
-#             # Control type from IDE (bus type), fallback to "PQ"
-#             ctrl = ide_to_ctrl.get(self.parser.bus_lookup[g.i].ide, "PQ")
-
-#             # Active power limits and nominal power
-#             p_nom = g.pt
-#             p_nom_min = g.pb
-#             p_set = g.pg
-#             p_min_pu = g.pb / g.pt if g.pt != 0 else 0.0  # Avoid div by zero
-
-#             # Reactive setpoint
-#             q_set = g.qg
-
-#             # Optional: carrier type (e.g., detect wind)
-#             carrier = "wind" if getattr(g, "wmod", 0) != 0 else "other"
-
-#             self.network.add("Generator",
-#                 name       = gname,
-#                 bus        = str(g.i),
-#                 control    = ctrl,
-#                 p_nom      = p_nom,
-#                 p_nom_extendable = False,
-#                 p_nom_min  = p_nom_min,
-#                 p_nom_max  = p_nom,
-#                 p_min_pu   = p_min_pu,
-#                 p_max_pu   = 1.0,
-#                 p_set      = p_set,
-#                 q_set      = q_set,
-#                 carrier    = carrier,
-#                 #active     = in_service,
-#                 efficiency = 1.0,  # Default unless you have a better estimate
-#             )
-            
-
-#         # --- Add Loads ---
-#         for idx, load in enumerate(self.parser.loads):
-#             if load.status != 1:
-#                 continue  # Skip out-of-service loads
-
-#             lname = f"L{idx}"
-
-#             self.network.add("Load",
-#                 name   = lname,
-#                 bus    = str(load.i),
-#                 carrier = "AC",        # Default for electrical loads
-#                 p_set  = load.pl,
-#                 q_set  = load.ql,
-#             )
-#         # --- Add Transformers ---
-#         for idx, tx in enumerate(self.parser.transformers):
-#             p1 = tx.p1
-#             p2 = tx.p2
-#             w1 = tx.w1
-#             w2 = tx.w2
-
-#             # Skip transformer if it's out of service (status not equal to 1 = fully in-service)
-#             if p1.stat != 1:
-#                 continue
-
-#             # Transformer name and buses
-#             name = f"T{idx}"
-#             bus0 = str(p1.i)
-#             bus1 = str(p1.j)
-
-#             # Apparent power base (MVA)
-#             s_nom = w1.rata if w1.rata > 0.0 else p2.sbase12
-
-#             # Normalize impedance from sbase12 to s_nom
-#             r = p2.r12 * (p2.sbase12 / s_nom)
-#             x = p2.x12 * (p2.sbase12 / s_nom)
-
-#             # Optional magnetizing admittance (can be set to 0.0 if not used)
-#             g = p1.mag1 / s_nom if p1.mag1 != 0.0 else 0.0
-#             b = p1.mag2 / s_nom if p1.mag2 != 0.0 else 0.0
-
-#             # Tap ratio and angle shift
-#             tap_ratio = w1.windv
-#             phase_shift = w1.ang
-
-#             self.network.add("Transformer",
-#                 name        = name,
-#                 bus0        = bus0,
-#                 bus1        = bus1,
-#                 type        = "",         # Use explicit parameters
-#                 model       = "t",        # PyPSA's physical default
-#                 r           = r,
-#                 x           = x,
-#                 g           = g,
-#                 b           = b,
-#                 s_nom       = s_nom,
-#                 s_nom_extendable = False,
-#                 num_parallel = 1,
-#                 tap_ratio   = tap_ratio,
-#                 tap_side    = 0,
-#                 phase_shift = phase_shift,
-#                 #active      = True,
-#                 v_ang_min   = -180,
-#                 v_ang_max   = 180,
-#             )
-#            # --- Add Two-Winding Transformers ---     
-
-#         # --- Add Shunt Impedances ---
-#         for idx, sh in enumerate(self.parser.switched_shunts):
-#             if sh.status != 1:
-#                 continue  # Skip out-of-service shunts
-
-#             v_nom = self.network.buses.at[str(sh.i), "v_nom"]  # in kV
-#             v_sq = v_nom ** 2
-
-#             g_siemens = sh.gl / v_sq  # MW / kV^2 → Siemens
-#             b_siemens = sh.bl / v_sq  # MVAr / kV^2 → Siemens
-
-#             shunt_name = f"Shunt_{idx}"
-
-#             self.network.add("ShuntImpedance",
-#                 name = shunt_name,
-#                 bus  = str(sh.i),
-#                 g    = g_siemens,
-#                 b    = b_siemens,
-#                 active = True,
-#             )
-#         return 1
-
-#     def pf(self) -> bool:
-#         """
-#         Runs power flow silently and checks for convergence.
-#         """
-#         try:
-#             # Suppress PyPSA logging
-#             logger = logging.getLogger("pypsa")
-#             previous_level = logger.level
-#             logger.setLevel(logging.WARNING)
-
-#             # Optional: suppress stdout too, just in case
-#             with io.StringIO() as buf, contextlib.redirect_stdout(buf):
-#                 results = self.network.pf()
-
-#             # Restore logging level
-#             logger.setLevel(previous_level)
-
-#         except Exception as e:
-#             print("[PyPSA ERROR]:", str(e))
-#             return False
-
-#         # Check convergence
-#         if not results.converged.all().bool():
-#             print("[PyPSA WARNING]: Some snapshots failed to converge.")
-#             failed = results.converged[~results.converged[0]].index.tolist()
-#             print("Non-converged snapshots:", failed)
-#             return False
-
-#         # Update internal dataframes
-#         self.bus_dataframe = self.network.buses.copy()
-#         self.generator_dataframe = self.network.generators.copy()
-#         self.branches_dataframe = self.network.lines.copy()
-#         return True
-        
-#     def add_wec(self, model: str, ibus: int, jbus: int) -> bool:
-#         try:
-#             self.network.add("Bus",
-#                 name=str(ibus),
-#                 v_nom=self.network.buses.at[str(jbus), "v_nom"],
-#                 carrier="AC",
-#             )
-#             self.network.add("Line",
-#                 name="WEC Line",
-#                 bus0=str(ibus),
-#                 bus1=str(jbus),
-#                 r=7.875648,
-#                 x=28.784447,
-#                 s_nom=130.00,
-#             )
-#             for i, wec in enumerate(self.engine.wecObj_list):
-#                 wec.gen_id = f"W{i}"
-#                 wec.gen_name = f"{wec.gen_id}-{wec.model}-{wec.ID}"
-#                 self.network.add("Generator",
-#                     name=str(wec.gen_id),
-#                     bus=str(ibus),
-#                     carrier="wave",
-#                     p_nom=0.03,
-#                     p_nom_max = 0.03,
-#                     p_max_pu = 1.0,
-#                     p_set=0.001,
-#                     control="PV",
-#                 )
-#             self.pf()
-#             return True
-#         except Exception as e:
-#             print(f"[PyPSA ERROR]: Failed to add WEC Components: {e}")
-#             return False  
-
-    # def simulate(self, snapshots=None, sim_length=None, load_curve=False, plot=True)->bool:
-
-    #     p_set_data = {}
-    #     # Iterate over all WEC objects to gather data
-    #     for idx, wec in enumerate(self.engine.wecObj_list):
-    #         '''
-    #         This is assuming the WEC output is in kW, so we convert it to MW. 
-    #         0.016 from wec-sim is = 16kW, so we divide by 1000 to get MW.
-    #         '''
-    #         pg_data = wec.dataframe["pg"]
-    #         p_set_data[wec.gen_id] = pg_data.to_list()
-        
-        
-    #     self.network.set_snapshots(self.snapshots) 
-    #     self.network.generators_t.p_set = pd.DataFrame(p_set_data, index=self.snapshots)
-    #     if load_curve:
-    #         if self.load_profiles is None or self.load_profiles.empty:
-    #             self.engine.generate_load_profiles()
-    #         self.network.loads_t.p_set = self.load_profiles.copy()
-        
-    #     self.pf()
-        
-    #     if plot:
-    #         self.viz.plot_all()
-    #     return True
