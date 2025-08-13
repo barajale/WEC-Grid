@@ -50,31 +50,21 @@ from .power_system_modeler import PowerSystemModeler
 class PyPSAModeler(PowerSystemModeler):
     """PyPSA power system modeling interface.
     
-    This class provides a comprehensive interface for power system modeling and simulation
-    using PyPSA (Python for Power System Analysis). It inherits from the PowerSystemModeler 
-    abstract base class and implements PyPSA-specific functionality for grid analysis, 
-    WEC farm integration, and time-series simulation.
-    
-    The PyPSAModeler handles PyPSA network creation from PSS®E case files, power flow 
-    solutions, component modifications, and data extraction. It supports both .sav (saved case) 
-    and .raw (raw data) file formats and provides methods for dynamic simulation with WEC farms.
+    Provides interface for power system modeling and simulation using PyPSA 
+    (Python for Power System Analysis). Implements PyPSA-specific functionality 
+    for grid analysis, WEC farm integration, and time-series simulation.
     
     Args:
-        engine (Any): The WEC-GRID simulation engine containing case configuration,
-            time management, and WEC farm definitions. Must have attributes for
-            case_file, time, and wec_farms.
+        engine: WEC-GRID simulation engine with case_file, time, and wec_farms attributes.
     
     Attributes:
-        engine (Any): Reference to the simulation engine.
-        grid (GridState): Current grid state containing time-series data for all
-            components (buses, generators, lines, loads).
-        network (Optional[pypsa.Network]): PyPSA Network object for power system analysis.
-        sbase (float): System base MVA from case file [MVA].
+        engine: Reference to simulation engine.
+        grid (GridState): Time-series data for all components.
+        network (pypsa.Network): PyPSA Network object for power system analysis.
+        sbase (float): System base power [MVA] from case file.
         parser: GRG PSS®E case file parser object for data extraction.
         
     Example:
-        >>> from wecgrid.engine import WECGridEngine
-        >>> engine = WECGridEngine(case_file="IEEE_14_bus.raw")
         >>> pypsa_model = PyPSAModeler(engine)
         >>> pypsa_model.init_api()
         >>> pypsa_model.simulate()
@@ -83,69 +73,31 @@ class PyPSAModeler(PowerSystemModeler):
         - Compatible with PyPSA version 0.21+ for power system analysis
         - Uses GRG PSS®E parser for case file import and conversion
         - Automatically converts PSS®E impedance values to PyPSA format
-        - Supports time-series simulation with configurable load curves
-        - Grid state is captured at each simulation snapshot for analysis
         - Provides validation against PSS®E results for cross-platform verification
         
-    Raises:
-        ImportError: If PyPSA or required dependencies are not installed.
-        ValueError: If the provided engine lacks required attributes.
+    TODO:
+        - Add support for PyPSA native case formats
+        - Implement dynamic component ratings
     """
     
     def __init__(self, engine: Any):
-        """Initialize the PyPSAModeler with the simulation engine.
-        
-        Creates a new PyPSAModeler instance and calls the parent PowerSystemModeler
-        constructor to set up the basic modeling framework. The engine object must
-        contain case file information, time configuration, and WEC farm definitions.
+        """Initialize PyPSAModeler with simulation engine.
         
         Args:
-            engine (Any): WEC-GRID simulation engine with the following required attributes:
-                - case_file (str): Path to PSS®E case file (.sav or .raw)
-                - time: Time management object with start_time and snapshots
-                - wec_farms (List[WECFarm]): List of WEC farm objects for integration
+            engine: WEC-GRID Engine with case_file, time, and wec_farms attributes.
                 
         Note:
-            This method only performs basic initialization. Call ``init_api()`` after
-            instantiation to initialize the PyPSA network and load the case file.
-            
-        Example:
-            >>> engine = WECGridEngine(case_file="test_case.raw")
-            >>> modeler = PyPSAModeler(engine)
-            >>> modeler.init_api()  # Required for PyPSA functionality
+            Call init_api() after construction to initialize PyPSA network.
         """
         super().__init__(engine)
-
         self.network: Optional[pypsa.Network] = None
     
 
     def __repr__(self) -> str:
-        """Return a formatted string representation of the PyPSAModeler.
-        
-        Provides a tree-style summary of the PyPSA model including the case name,
-        component counts, and system base MVA. This representation gives users
-        a quick overview of the loaded grid model structure.
+        """String representation of PyPSA model with network summary.
         
         Returns:
-            str: Multi-line string representation showing:
-                - Case file name
-                - Number of buses, generators, loads, and lines
-                - System base MVA [MVA]
-                
-        Example:
-            >>> print(modeler)
-            pypsa:
-            ├─ case: IEEE_14_bus.raw
-            ├─ buses: 14
-            ├─ generators: 5
-            ├─ loads: 11
-            └─ lines: 20
-            
-            Sbase: 100.0 MVA
-            
-        Note:
-            This method requires that ``init_api()`` has been called successfully
-            and that grid state data is available.
+            str: Tree-style summary with case name, component counts, and system base [MVA].
         """
         return (
             f"pypsa:\n"

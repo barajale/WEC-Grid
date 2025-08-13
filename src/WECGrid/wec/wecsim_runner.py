@@ -23,91 +23,46 @@ from dataclasses import dataclass
 class WECSimRunner:
     """Interface for running WEC-Sim device-level simulations via MATLAB engine.
     
-    The WECSimRunner class provides a Python interface to the WEC-Sim MATLAB toolbox
-    for high-fidelity wave energy converter simulations. It manages MATLAB engine
-    lifecycle, configures simulation parameters, executes WEC-Sim models, and stores
-    results in the WEC-Grid database.
-    
-    Key Capabilities:
-        - **MATLAB Integration**: Manages MATLAB engine startup/shutdown
-        - **WEC-Sim Interface**: Executes device-level hydrodynamic simulations
-        - **Parameter Management**: Configures wave conditions and simulation settings
-        - **Database Storage**: Stores simulation results for grid integration studies
-        - **Visualization**: Generates plots of WEC power output and wave conditions
-        - **Model Support**: Handles multiple WEC device models (RM3, LUPA, etc.)
+    Provides Python interface to WEC-Sim MATLAB toolbox for high-fidelity wave energy 
+    converter simulations. Manages MATLAB engine, executes WEC-Sim models, and stores
+    results in WEC-Grid database.
         
     Attributes:
-        wec_sim_path (str, optional): Path to WEC-Sim MATLAB framework installation.
+        wec_sim_path (str, optional): Path to WEC-Sim MATLAB installation.
         database (WECGridDB): Database interface for simulation data storage.
-        matlab_engine (matlab.engine.MatlabEngine, optional): Active MATLAB engine instance.
+        matlab_engine (matlab.engine.MatlabEngine, optional): Active MATLAB engine.
         
     Example:
-        >>> # Basic WEC-Sim simulation
-        >>> from wecgrid.database import WECGridDB
-        >>> db = WECGridDB()
-        >>> runner = WECSimRunner(db)
+        >>> runner = WECSimRunner(database)
         >>> runner.set_wec_sim_path("/path/to/WEC-Sim")
-        >>> 
-        >>> # Run RM3 simulation with specified wave conditions
         >>> success = runner(
         ...     sim_id=101,
         ...     model="RM3",
-        ...     sim_length_secs=3600,  # 1 hour
-        ...     wave_height=2.5,       # 2.5m significant wave height
-        ...     wave_period=8.0        # 8s peak period
+        ...     sim_length_secs=3600,
+        ...     wave_height=2.5,
+        ...     wave_period=8.0
         ... )
-        >>> 
-        >>> if success:
-        ...     print("WEC-Sim simulation completed successfully")
-        
-    Workflow:
-        1. **Initialization**: Create runner with database connection
-        2. **Configuration**: Set WEC-Sim installation path
-        3. **Execution**: Run device simulations with wave parameters
-        4. **Storage**: Results automatically stored in database
-        5. **Visualization**: Automatic plotting of simulation results
-        
-    WEC-Sim Integration:
-        - Requires WEC-Sim MATLAB toolbox installation
-        - Supports WEC models (RM3, LUPA) found in src/wecgrid/models/wec_models
-        - Handles wave generation and hydrodynamic calculations via WEC-SIM
-        - Outputs power time series for grid integration
-        
-    Database Schema:
-        Creates tables for each simulation:
-        - `WECSIM_{model}_{sim_id}`: Downsampled results for grid simulation
-        - `WECSIM_{model}_{sim_id}_full`: Full-resolution simulation data
         
     Notes:
-        - Requires valid MATLAB license and WEC-Sim installation
-        - MATLAB engine startup can be slow (~30-60 seconds)
-        - Simulation time scales with duration and wave complexity
-        - Results include both power output and wave elevation data
-        - Automatic visualization helps validate simulation quality
+        - Requires MATLAB license and WEC-Sim installation
+        - MATLAB engine startup takes 30-60 seconds
+        - Results stored in database tables: WECSIM_{model}_{sim_id}
+        - Supports WEC models in src/wecgrid/models/wec_models
         
-        
-    References:
-        WEC-Sim documentation: https://wec-sim.github.io/WEC-Sim/
+    TODO:
+        - Add async MATLAB engine support for better performance
+        - Implement batch simulation capabilities
     """
     def __init__(self, database: WECGridDB):
         """Initialize WEC-Sim runner with database connection.
         
-        Creates a new WEC-Sim runner instance configured for device-level simulations.
-        The runner requires a database connection for storing simulation results but
-        defers MATLAB engine initialization until needed.
-        
         Args:
             database (WECGridDB): Database interface for simulation data storage.
-                Must be a valid WECGridDB instance with working connection.
-
-        Initialization State:
-            - Database connection: Active and ready
-            - WEC-Sim path: Not configured (must set manually)
-            - MATLAB engine: Not started (lazy initialization)
-            
+                Must be connected and accessible for result storage.
+                
         Notes:
-            - WEC-Sim path must be configured before running simulations
-            - Database connection is validated during initialization
+            - MATLAB engine initialized on first simulation call
+            - WEC-Sim path must be set before running simulations
         """
         self.wec_sim_path: Optional[str] = None
         self.database: WECGridDB = database
@@ -453,38 +408,18 @@ class WECSimRunner:
             - Random seed enables reproducible or stochastic simulations
             - Wave time series stored for correlation analysis
             
-        Power Output Characteristics:
-            - Active power varies with wave conditions and WEC dynamics
-            - Sampling interval matches grid simulation requirements
-            - Power output includes WEC device efficiency and control effects
-            - Results suitable for grid integration and stability studies
-            
-        Model-Specific Execution:
-            - **RM3**: Uses standard w2gSim() function with wave parameters
-            - **LUPA**: Uses specialized w2gSim_LUPA() function
-            - Model directory resolved automatically from WEC model library
-            - Each model has specific hydrodynamic and control characteristics
-            
-        Performance Considerations:
-            - Simulation time scales roughly linearly with sim_length_secs
-            - MATLAB engine startup adds ~30-60s overhead per simulation
-            - Memory usage depends on simulation duration and output frequency
-            - Database storage requires adequate disk space for time series
-            
         Notes:
+            - Formatter file in WEC Model folder with mat files
             - MATLAB engine automatically stopped after simulation completion
             - Results visualization helps validate simulation quality
             - Database double-checking recommended for critical simulations
-            - TODO: Add simulation progress bar for long-duration runs
-            - TODO: Verify database write success with automated checks
+        
+        TODO:
+            - Add simulation progress bar for long-duration runs
+            - Verify database write success with automated checks
+            - Move formatter logic to WECSimRunner 
             
-        See Also:
-            start_matlab: MATLAB engine initialization
-            sim_results: Result visualization and validation
-            resolve_wec_model: WEC model path resolution
-            WECGridDB: Database interface for result storage
         """
-        #TODO some sorta sim progress bar would be cool? 
         
         try:
             model_dir = resolve_wec_model(model)  # accepts name or path

@@ -24,18 +24,14 @@ from ..wec.wecfarm import WECFarm
 
 @contextlib.contextmanager
 def silence_stdout():
-    """Context manager to suppress stdout output.
-    
-    This utility function redirects stdout to devnull temporarily, which is useful
-    for suppressing verbose output from the PSS®E Python API during initialization.
+    """Context manager to suppress stdout output from PSS®E API.
     
     Yields:
         None: Context where stdout is suppressed.
         
     Example:
-        with silence_stdout():
-            # PSS®E API calls with suppressed output
-            psspy.psseinit(50)
+        >>> with silence_stdout():
+        ...     psspy.psseinit(50)
     """
     new_target = open(os.devnull, 'w')
     old_stdout = sys.stdout
@@ -48,75 +44,50 @@ def silence_stdout():
 class PSSEModeler(PowerSystemModeler):
     """PSS®E power system modeling interface.
     
-    This class provides a comprehensive interface for power system modeling and simulation
-    using Siemens PSS®E software. It inherits from the PowerSystemModeler abstract base
-    class and implements PSS®E-specific functionality for grid analysis, WEC farm integration,
+    Provides interface for power system modeling and simulation using Siemens PSS®E software.
+    Implements PSS®E-specific functionality for grid analysis, WEC farm integration,
     and time-series simulation.
     
-    The PSSEModeler handles PSS®E case file loading, power flow solutions, component
-    modifications, and data extraction. It supports both .sav (saved case) and .raw
-    (raw data) file formats and provides methods for dynamic simulation with WEC farms.
-    
     Args:
-        engine (Any): The WEC-GRID simulation engine containing case configuration,
-            time management, and WEC farm definitions. Must have attributes for
-            case_file, time, and wec_farms.
+        engine: WEC-GRID simulation engine with case_file, time, and wec_farms attributes.
     
     Attributes:
-        engine (Any): Reference to the simulation engine.
-        grid (GridState): Current grid state containing time-series data for all
-            components (buses, generators, lines, loads).
-        sbase (float): System base MVA from PSS®E case [MVA].
-        psspy (module): PSS®E Python API module for direct API access.
+        engine: Reference to simulation engine.
+        grid (GridState): Time-series data for all components.
+        sbase (float): System base power [MVA] from PSS®E case.
+        psspy (module): PSS®E Python API module for direct access.
         
     Example:
-
+        >>> psse_model = PSSEModeler(engine)
+        >>> psse_model.init_api()
+        >>> psse_model.solve_powerflow()
         
     Notes:
         - Requires PSS®E software installation and valid license
         - Compatible with PSS®E version 35.3 Python API
-        - Automatically removes reactive power limits from generators for PyPSA compatibility
-        - Supports time-series simulation with configurable load curves
-        - Grid state is captured at each simulation snapshot for analysis
+        - Supports both .sav (saved case) and .raw (raw data) formats
+        - Automatically captures grid state at each simulation snapshot
         
-    Raises:
-        ImportError: If PSS®E software is not found or not properly configured.
-        ValueError: If the provided engine lacks required attributes.
+    TODO:
+        - Add support for newer PSS®E versions
+        - Implement dynamic simulation capabilities
     """
     def __init__(self, engine: Any):
-        """Initialize the PSSEModeler with the simulation engine.
-        
-        Creates a new PSSEModeler instance and calls the parent PowerSystemModeler
-        constructor to set up the basic modeling framework. The engine object must
-        contain case file information, time configuration, and WEC farm definitions.
+        """Initialize PSSEModeler with simulation engine.
         
         Args:
-            engine (Any): WEC-GRID simulation engine with the following required attributes:
-                - case_file (str): Path to PSS®E case file (.sav or .raw)
-                - time: Time management object with start_time and snapshots
-                - wec_farms (List[WECFarm]): List of WEC farm objects for integration
+            engine: WEC-GRID Engine with case_file, time, and wec_farms attributes.
                 
         Note:
-            This method only performs basic initialization. Call ``init_api()`` after
-            instantiation to initialize the PSS®E environment and load the case file.
-            
-        Example:
-
+            Call init_api() after construction to initialize PSS®E API.
         """
         super().__init__(engine)
 
     def __repr__(self) -> str:
-        """Return a formatted string representation of the PSSEModeler.
-        
-        Provides a tree-style summary of the PSS®E model including the case name,
-        component counts, and system base MVA. This representation gives users
-        a quick overview of the loaded grid model structure.
+        """String representation of PSS®E model with grid summary.
         
         Returns:
-            str: Multi-line string representation showing:
-                - Case file name
-                - Number of buses, generators, loads, and lines
-                - System base MVA [MVA]
+            str: Tree-style summary with case name, component counts, and system base [MVA].
                 
         Example:
             >>> print(modeler)
@@ -124,14 +95,8 @@ class PSSEModeler(PowerSystemModeler):
             ├─ case: IEEE_14_bus.sav
             ├─ buses: 14
             ├─ generators: 5
-            ├─ loads: 11
             └─ lines: 20
-            
             Sbase: 100.0 MVA
-            
-        Note:
-            This method requires that ``init_api()`` has been called successfully
-            and that grid state data is available.
         """
         return (
             f"psse:\n"

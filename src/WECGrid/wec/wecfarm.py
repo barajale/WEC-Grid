@@ -14,45 +14,29 @@ from .wecsim_runner import WECSimRunner
 
 
 class WECFarm:
-    """Collection of Wave Energy Converter devices at a common grid connection point.
+    """Collection of Wave Energy Converter devices at a common grid connection.
     
-    The WECFarm class represents a utility-scale installation of multiple identical
-    WEC devices sharing a common grid connection bus. It manages device-level power
-    output aggregation, time-series data coordination, and grid integration parameters
-    for realistic renewable energy modeling in power system studies.
-    
-    Key Capabilities:
-        - **Device Aggregation**: Manages multiple identical WEC devices
-        - **Power Summation**: Aggregates individual device outputs to farm level
-        - **Grid Connection**: Models single point of common coupling
-        - **Time Synchronization**: Coordinates device data with grid simulation time
-        - **Database Integration**: Retrieves WEC-Sim simulation results automatically
-        - **Scalable Modeling**: Supports farms from single devices to utility scale
+    Manages multiple identical WEC devices sharing a grid connection bus. 
+    Aggregates device power outputs and coordinates time-series data for
+    power system integration studies.
         
     Attributes:
-        farm_name (str): Human-readable identifier for the WEC farm.
-        database: Database interface for accessing WEC simulation data.
+        farm_name (str): Human-readable farm identifier.
+        database: Database interface for WEC simulation data.
         time: Time manager for simulation synchronization.
-        sim_id (int): Database simulation identifier for WEC data retrieval.
-        model (str): WEC device model type (e.g., "RM3", "LUPA").
+        sim_id (int): Database simulation ID for WEC data retrieval.
+        model (str): WEC device model type (e.g., "RM3").
         bus_location (int): Grid bus number for farm connection.
         connecting_bus (int): Network topology connection bus.
         id (str): Unique generator identifier for power system integration.
-        size (int): Number of identical WEC devices in the farm.
+        size (int): Number of identical WEC devices in farm.
         config (Dict): Configuration parameters for the farm.
-        wec_devices (List[WECDevice]): Collection of individual WEC device objects.
-        BASE (float): Base power rating in MVA for per-unit calculations.
+        wec_devices (List[WECDevice]): Collection of individual WEC devices.
+        BASE (float): Base power rating [MVA] for per-unit calculations.
         
     Example:
-        >>> # Create a small research farm
-        >>> from wecgrid.database import WECGridDB
-        >>> from wecgrid.util import WECGridTimeManager
-        >>> 
-        >>> db = WECGridDB()
-        >>> time_mgr = WECGridTimeManager()
-        >>> 
         >>> farm = WECFarm(
-        ...     farm_name="Oregon Coast Test Farm",
+        ...     farm_name="Oregon Coast Farm",
         ...     database=db,
         ...     time=time_mgr,
         ...     sim_id=101,
@@ -60,161 +44,51 @@ class WECFarm:
         ...     bus_location=14,
         ...     size=5
         ... )
-        >>> print(f"Farm: {farm.farm_name}, Size: {len(farm.wec_devices)}")
-        Farm: Oregon Coast Test Farm, Size: 5
-        
-        >>> # Get aggregated power at specific time
-        >>> timestamp = time_mgr.snapshots[10]
         >>> total_power = farm.power_at_snapshot(timestamp)
-        >>> print(f"Total farm output: {total_power:.2f} MW")
-        
-    Farm Characteristics:
-        - **Homogeneous devices**: All devices use same WEC model and parameters
-        - **Common connection**: Single grid bus for entire farm
-        - **Synchronized operation**: All devices respond to same wave conditions
-        - **Scalable output**: Power scales linearly with number of devices
-        - **Realistic constraints**: Based on actual WEC-Sim simulation data
-        
-    Data Flow:
-        1. **WEC-Sim Results**: Individual device simulations stored in database
-        2. **Data Retrieval**: Farm retrieves simulation results during initialization
-        3. **Device Creation**: Individual WECDevice objects created for each unit
-        4. **Time Alignment**: Device data synchronized with grid simulation time
-        5. **Power Aggregation**: Individual outputs summed for grid integration
-        
-    Grid Integration:
-        - Modeled as renewable generator in power system software
-        - Time-varying power output based on wave conditions
-        - Single connection point simplifies network modeling
-        - Per-unit base power enables consistent scaling
-        
-    Database Requirements:
-        Required tables in database:
-        - `WECSIM_{model}_{sim_id}`: Downsampled data for grid integration
-        - `WECSIM_{model}_{sim_id}_full`: Full-resolution simulation data
         
     Notes:
-        - Requires prior WEC-Sim simulation with matching sim_id
-        - All devices in farm share identical power profiles
-        - Farm size limited by practical grid connection constraints
+        - All devices use identical power profiles from WEC-Sim data
+        - Power scales linearly with farm size
+        - Requires WEC-Sim simulation data in database
         - Base power typically 100 MVA for utility-scale installations
-        - TODO: Add heterogeneous device support for different models
-        - TODO: Implement smart farm control and optimization
         
-    See Also:
-        WECDevice: Individual wave energy converter device modeling
-        WECSimRunner: Interface for running device-level simulations
-        Engine.apply_wec: High-level farm integration method
-        
-    References:
-        IEC 62600-2: Marine energy systems design requirements
+    TODO:
+        - Add heterogeneous device support for different models
+        - Implement smart farm control and optimization
     """
     def __init__(self, farm_name: str, database, time: Any, sim_id: int, model: str, bus_location: int, connecting_bus: int = 1, size: int = 1, gen_id: str = None):
-        """Initialize a Wave Energy Converter farm with specified configuration.
-        
-        Creates a WEC farm by retrieving device simulation data from the database
-        and instantiating the specified number of identical WEC devices. The farm
-        coordinates device operations and provides aggregated power output for
-        grid integration studies.
+        """Initialize WEC farm with specified configuration.
         
         Args:
-            farm_name (str): Human-readable name for the WEC farm.
-                Used for identification in plots and reports.
-            database: Database interface for accessing WEC simulation results.
-                Must contain WEC-Sim simulation data for the specified sim_id.
+            farm_name (str): Human-readable WEC farm identifier.
+            database: Database interface for WEC simulation data access.
             time: Time management object for simulation synchronization.
-                Provides start time and snapshot scheduling for device alignment.
-            sim_id (int): Database simulation identifier for WEC data retrieval.
-                Must correspond to existing WEC-Sim simulation results.
-            model (str): WEC device model type for all devices in farm.
-                Supported models: "RM3", "LUPA", custom models.
-            bus_location (int): Power system bus number for farm grid connection.
-                Must be valid bus in the power system case file.
-            connecting_bus (int, optional): Network topology connection bus.
-                Used for advanced network modeling. Defaults to 1.
-            size (int, optional): Number of identical WEC devices in the farm.
-                Scales total farm power output linearly. Defaults to 1.
-            gen_id (str, optional): Unique generator identifier for power system.
-                Auto-generated if not specified. Used by PSS®E and PyPSA.
+            sim_id (int): Database simulation ID for WEC data retrieval.
+            model (str): WEC device model type ("RM3", etc.).
+            bus_location (int): Grid bus number for farm connection.
+            connecting_bus (int, optional): Network topology connection bus. Defaults to 1.
+            size (int, optional): Number of WEC devices in farm. Defaults to 1.
+            gen_id (str, optional): Generator ID for power system. Auto-generated if None.
                 
-        Returns:
-            None: Initializes farm with populated wec_devices collection.
-            
         Raises:
             RuntimeError: If WEC simulation data not found in database.
             ValueError: If database query returns empty results.
-            KeyError: If required data columns missing from simulation results.
             
         Example:
-            >>> # Small research farm
             >>> farm = WECFarm(
-            ...     farm_name="Newport Test Array",
+            ...     farm_name="Newport Array",
             ...     database=db,
-            ...     time=time_manager,
+            ...     time=time_mgr,
             ...     sim_id=101,
             ...     model="RM3",
             ...     bus_location=14,
-            ...     size=3
+            ...     size=5
             ... )
-            >>> print(f"Created farm with {len(farm.wec_devices)} devices")
-            Created farm with 3 devices
-            
-            >>> # Utility-scale installation
-            >>> large_farm = WECFarm(
-            ...     farm_name="Oregon Coast Commercial Farm",
-            ...     database=db,
-            ...     time=time_manager,
-            ...     sim_id=201,
-            ...     model="RM3",
-            ...     bus_location=30,
-            ...     size=50,
-            ...     gen_id="WEC_FARM_1"
-            ... )
-            
-        Initialization Process:
-            1. **Parameter Storage**: Store farm configuration parameters
-            2. **Database Validation**: Verify WEC simulation data exists
-            3. **Data Retrieval**: Load both downsampled and full-resolution data
-            4. **Time Alignment**: Synchronize device data with simulation timeline
-            5. **Device Creation**: Instantiate specified number of WEC devices
-            6. **Base Power Setup**: Configure per-unit calculations from data
-            
-        Database Requirements:
-            Required tables with naming pattern:
-            - `WECSIM_{model}_{sim_id}`: Grid integration data (5-min intervals)
-            - `WECSIM_{model}_{sim_id}_full`: Full simulation data (high resolution)
-            
-            Required columns in integration table:
-            - time: Simulation time [s]
-            - p: Active power output [MW]
-            - base: Base power rating [MVA]
-            
-        Device Configuration:
-            Each WECDevice created with:
-            - Unique name: "{model}_{sim_id}_{device_index}"
-            - Shared power profile: Same time series for all devices
-            - Individual object: Separate WECDevice instance per device
-            - Common parameters: Same bus location and base power
-            
-        Farm Scaling:
-            - **Linear power scaling**: Total power = device_power × size
-            - **Identical profiles**: All devices follow same wave conditions
-            - **Realistic modeling**: Based on actual device physics
-            - **Grid constraints**: Limited by connection bus capacity
             
         Notes:
-            - Requires prior WEC-Sim simulation completion
-            - All devices share identical power profiles (same wave field)
-            - Database queries executed during initialization for performance
-            - Time indexing uses 5-minute intervals for grid compatibility
-            - Base power extracted from simulation data automatically
-            - TODO: Add validation for bus_location existence in power system
-            - TODO: Support for heterogeneous device configurations
-            
-        See Also:
-            _prepare_farm: Internal method for data loading and device creation
-            WECDevice: Individual device object created for each farm unit
-            WECSimRunner: Generates the simulation data used by farms
+            - Creates identical WECDevice objects for all farm devices
+            - Retrieves WEC-Sim data from database using sim_id
+            - Sets up per-unit base power from simulation data
         """
         
         self.farm_name: str = farm_name

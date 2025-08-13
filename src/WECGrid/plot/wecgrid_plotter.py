@@ -12,121 +12,72 @@ import pandas as pd
 class WECGridPlotter:
     """High-level plotting interface for WEC-GRID simulation visualization.
     
-    The WECGridPlotter provides a comprehensive suite of visualization tools for analyzing
-    power system simulation results from both PSS®E and PyPSA backends. It supports
-    time-series plotting, cross-platform comparison, WEC farm analysis, and statistical
-    validation between different modeling tools.
-    
-    This class enables researchers to quickly generate publication-quality plots for
-    grid component analysis, WEC integration studies, and model validation workflows.
-    All plots follow consistent styling and provide detailed metrics for comparison studies.
+    Provides comprehensive visualization tools for analyzing power system simulation
+    results from PSS®E and PyPSA backends. Supports time-series plotting, cross-platform
+    comparison, WEC farm analysis, and statistical validation between modeling tools.
     
     Args:
-        engine: The WEC-GRID Engine instance containing simulation results from
-            PSS®E and/or PyPSA modeling backends.
+        engine: WEC-GRID Engine instance with simulation results from backends.
     
     Attributes:
-        engine: Reference to the WEC-GRID Engine with loaded simulation data.
+        engine: Reference to WEC-GRID Engine with loaded simulation data.
         
     Example:
-        >>> from wecgrid.engine import WECGridEngine
-        >>> from wecgrid.plot import WECGridPlotter
-        >>> 
-        >>> engine = WECGridEngine(case_file="IEEE_14_bus.sav")
-        >>> engine.run_simulation()
-        >>> 
         >>> plotter = WECGridPlotter(engine)
-        >>> # Plot generator active power from PSS®E
-        >>> plotter.plot_generator("psse", "p")
-        >>> # Compare bus voltages between PSS®E and PyPSA
-        >>> plotter.compare_software("bus", "v_mag")
-        >>> # Generate comprehensive WEC analysis
-        >>> plotter.plot_wec_analysis()
+        >>> plotter.plot_generator("psse", "p")  # Generator power
+        >>> plotter.compare_software("bus", "v_mag")  # Cross-platform comparison
+        >>> plotter.plot_wec_analysis()  # WEC farm analysis
         
     Notes:
         - Supports both PSS®E and PyPSA simulation backends
         - Provides statistical comparison metrics (MSE, RMSE, MAE, MAPE, R²)
         - Generates publication-quality figures with customizable styling
-        - Handles large datasets with intelligent legend management
         - Includes specialized WEC farm analysis capabilities
-        - All electrical quantities follow standardized units and per-unit conventions
-        
-    See Also:
-        WECGridEngine: Main simulation engine class
-        GridState: Standardized data container for simulation results
     """
     
     def __init__(self, engine):
-        """Initialize the WECGridPlotter with a WEC-GRID Engine instance.
+        """Initialize WECGridPlotter with WEC-GRID Engine.
         
         Args:
-            engine: The WEC-GRID Engine instance containing simulation results.
-                Must have 'psse' and/or 'pypsa' attributes with grid data.
-                
-        Example:
-            >>> plotter = WECGridPlotter(engine)
+            engine: WEC-GRID Engine with 'psse' and/or 'pypsa' attributes.
         """
         self.engine = engine
     
     def plot_component_data(self, software, component_type, parameter, component_name=None, 
                            figsize=(12, 6), style='default', show_grid=True, 
                            save_path=None, **plot_kwargs):
-        """Plot time series data for grid components from power system simulations.
-        
-        This method provides a flexible interface for plotting time-series data from
-        grid components (buses, generators, lines, loads) using either PSS®E or PyPSA
-        simulation results. It supports component filtering, custom styling, and
-        automatic data validation.
+        """Plot time series data for grid components.
         
         Args:
             software (str): Backend software ("psse" or "pypsa").
             component_type (str): Component type ("gen", "bus", "line", "load").
-            parameter (str): Parameter to plot ("p", "q", "v_mag", "angle_deg", 
-                "line_pct", etc.).
+            parameter (str): Parameter to plot ("p", "q", "v_mag", "angle_deg", "line_pct").
             component_name (str or list, optional): Specific component(s) to plot.
-                If None, plots all available components.
             figsize (tuple, optional): Figure size (width, height). Defaults to (12, 6).
             style (str, optional): Matplotlib style name. Defaults to 'default'.
             show_grid (bool, optional): Whether to show grid lines. Defaults to True.
-            save_path (str, optional): Path to save the figure. If None, figure is
-                displayed but not saved.
-            **plot_kwargs: Additional matplotlib plotting arguments (linewidth,
-                alpha, color, etc.).
+            save_path (str, optional): Path to save figure. Defaults to None.
+            **plot_kwargs: Additional matplotlib plotting arguments.
         
         Returns:
-            tuple: (fig, ax) matplotlib figure and axes objects, or (None, None)
-                if plotting fails.
+            tuple: (fig, ax) matplotlib objects, or (None, None) if plotting fails.
                 
         Raises:
-            ValueError: If software is not "psse" or "pypsa", component_type is invalid,
-                or parameter is not available.
-            AttributeError: If engine does not have the specified software backend
-                or grid data is not loaded.
+            ValueError: If software, component_type, or parameter invalid.
+            AttributeError: If engine missing specified backend or grid data.
         
         Example:
-            >>> # Plot all generator active power from PSS®E
+            >>> # Plot all generator active power
             >>> fig, ax = plotter.plot_component_data("psse", "gen", "p")
             >>> 
-            >>> # Plot specific bus voltages with custom styling
-            >>> fig, ax = plotter.plot_component_data(
-            ...     "pypsa", "bus", "v_mag", 
-            ...     component_name=["1", "2", "3"],
-            ...     linewidth=3, alpha=0.7
-            ... )
-            >>> 
-            >>> # Save line loading plot
-            >>> plotter.plot_component_data(
-            ...     "psse", "line", "line_pct",
-            ...     save_path="line_loading.png"
-            ... )
+            >>> # Plot specific bus voltages
+            >>> plotter.plot_component_data("pypsa", "bus", "v_mag", 
+            ...                             component_name=["1", "2", "3"])
             
         Notes:
             - Automatically handles data validation and missing components
-            - Provides informative error messages for troubleshooting
-            - Supports both single component and multi-component plotting
-            - Y-axis labels are automatically set based on parameter type
-            - Legend is intelligently managed for multiple components
-            - Data summary is printed to console for verification
+            - Y-axis labels set based on parameter type
+            - Legend managed intelligently for multiple components
         """
         
         # Set style with error handling

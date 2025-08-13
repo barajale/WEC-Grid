@@ -29,75 +29,44 @@ import pandas as pd
 class Engine:
     """Main orchestrator for WEC-Grid simulations and cross-platform power system analysis.
     
-    The Engine class serves as the central coordinator for WEC-Grid simulations, integrating
-    Wave Energy Converter (WEC) farms with power system modeling across multiple software
-    platforms (PSS®E and PyPSA). It manages simulation workflows, time coordination,
-    database operations, and visualization.
-    
-    Key Capabilities:
-        - **Multi-platform simulation**: Supports both PSS®E and PyPSA backends
-        - **WEC farm integration**: Manages multiple WEC farms with realistic power output
-        - **Time series coordination**: Handles synchronized time-series simulations
-        - **Load profile generation**: Creates realistic load curves with demand variability
-        - **Database integration**: Stores and retrieves simulation results
-        - **Visualization interface**: Provides comprehensive plotting capabilities
+    Coordinates WEC farm integration with PSS®E and PyPSA power system modeling backends.
+    Manages simulation workflows, time synchronization, and visualization for grid studies.
         
     Attributes:
-        case_file (str, optional): Path to the power system case file (.RAW format).
-        case_name (str, optional): Human-readable name derived from case file.
+        case_file (str, optional): Path to power system case file (.RAW format).
+        case_name (str, optional): Human-readable case identifier.
         time (WECGridTimeManager): Time coordination and snapshot management.
         psse (PSSEModeler, optional): PSS®E simulation interface.
         pypsa (PyPSAModeler, optional): PyPSA simulation interface.
-        wec_farms (List[WECFarm]): Collection of WEC farms in the simulation.
-        database (WECGridDB): Database interface for simulation data storage.
+        wec_farms (List[WECFarm]): Collection of WEC farms in simulation.
+        database (WECGridDB): Database interface for WEC simulation data.
         plot (WECGridPlotter): Visualization and plotting interface.
-        wec_sim (WECSimRunner): WEC-Sim integration for device-level modeling.
+        wec_sim (WECSimRunner): WEC-Sim integration for device modeling.
         
     Example:
-        >>> # Basic setup and simulation
         >>> engine = Engine()
         >>> engine.case("IEEE_30_bus")
         >>> engine.load(["psse", "pypsa"])
-        >>> engine.apply_wec("North Farm", size=5, bus_location=14, model="RM3")
-        >>> engine.simulate(sim_length=288, load_curve=True)
-        
-        >>> # Cross-platform comparison
+        >>> engine.apply_wec("North Farm", size=5, bus_location=14)
+        >>> engine.simulate(load_curve=True)
         >>> engine.plot.comparison_suite()
         
-        >>> # WEC-specific analysis
-        >>> engine.plot.plot_wec_analysis("psse")
-        
     Notes:
-        - Requires appropriate software licenses (PSS®E) and installations
-        - WEC data sourced from WEC-Sim simulations or database. MATLAB required for WEC-SIM simulations
-        - Supports academic research and commercial power system studies
-        - Designed for cross-platform validation and verification workflows
+        - PSS®E requires commercial license; PyPSA is open-source
+        - WEC data from WEC-Sim simulations (requires MATLAB)
+        - Supports cross-platform validation studies
+        
+    TODO:
+        - Consider renaming to WECGridEngine for clarity
     """
-    #TODO name it WECGridEngine? think on it
 
     def __init__(
         self
     ):
         """Initialize the WEC-Grid Engine with default configuration.
         
-        Creates a new Engine instance with empty power system modelers, time management,
-        database connection, and visualization interface. The engine is ready for case
-        loading and simulation setup.
-        
-        Initializes:
-            - Empty case configuration (no power system loaded)
-            - Time manager with default settings
-            - Database connection for simulation data storage
-            - Plotting interface linked to this engine
-            - WEC-Sim runner for device-level simulations
-            - Empty collections for WEC farms
-            
-        Notes:
-            - No power system case is loaded initially
-            - All modelers (PSS®E, PyPSA) are set to None until explicitly loaded
-            - Database connection is established but no data is pulled
-            - Ready for case loading via engine.case() method
-            
+        Creates engine instance ready for case loading and simulation setup.
+        All modelers are None until explicitly loaded via load() method.
         """
         self.case_file: Optional[str] = None
         self.case_name: Optional[str] = None
@@ -113,48 +82,25 @@ class Engine:
     def case(self, case_file: str):
         """Load a power system case file for simulation.
         
-        Sets the power system case file that will be used for all subsequent simulations 
-        and Power System modlers. Supports both local file paths and bundled IEEE test cases. 
-        The case name is automatically derived from the filename for display purposes.
-        
         Args:
-            case_file (str): Path to power system case file. Can be:
-                - Full path to local .RAW file: "/path/to/system.RAW"
-                - Relative path: "data/ieee_30.RAW" 
-                - Bundled case name: "IEEE_30_bus" or "IEEE_14_bus"
-                - Case with extension: "IEEE_39_bus.RAW"
+            case_file (str): Power system case file path. Supports:
+                - Full paths: "/path/to/system.RAW"
+                - Bundled cases: "IEEE_30_bus", "IEEE_14_bus"
+                - With extension: "IEEE_39_bus.RAW"
         
-        Returns:
-            None: Sets internal case_file and case_name attributes.
-            
         Raises:
-            FileNotFoundError: If specified case file cannot be located.
-            ValueError: If case file format is not supported.
+            FileNotFoundError: If case file cannot be located.
+            ValueError: If case file format not supported.
             
         Example:
-            >>> # Load bundled IEEE test case
             >>> engine.case("IEEE_30_bus")
             >>> print(f"Loaded: {engine.case_name}")
             Loaded: IEEE 30 bus
             
-            >>> # Load local case file
-            >>> engine.case("/path/to/custom_system.RAW")
-            >>> print(f"Case file: {engine.case_file}")
-            
-        Supported Case Formats:
-            - **PSS®E RAW**: Standard power flow data format
-            - **IEEE Test Systems**: Pre-configured benchmark cases
-                * IEEE_14_bus: 14-bus test system
-                * IEEE_24_bus: IEEE RTS-24 reliability test system
-                * IEEE_30_bus: 30-bus test system
-                * IEEE_39_bus: New England 39-bus system
-                
         Notes:
-            - Case file path is resolved using internal resource management
-            - Case name formatting removes underscores and hyphens for display
-            - Must be called before load() to initialize power system backends
-            - Case file is validated when modelers are initialized
-            
+            - Supports PSS®E RAW format and IEEE test systems
+            - Must be called before load() method
+            - Case name auto-formatted for display
         """
         path = resolve_grid_case(case_file)
         self.case_file = str(path)
@@ -164,40 +110,24 @@ class Engine:
     def load(self, software: List[str]) -> None:
         """Initialize power system simulation backends.
         
-        Initializes one or more power system modeling platforms using the previously
-        loaded case file. Each software backend provides independent simulation
-        capabilities and can be used for cross-platform validation.
-        
         Args:
-            software (List[str]): List of software backends to initialize.
-                Supported options:
-                - "psse": PSS®E power system simulator
-                - "pypsa": PyPSA open-source power system analysis
+            software (List[str]): Backends to initialize ("psse", "pypsa").
                 
-        Returns:
-            None: Initializes internal modeler objects.
-            
         Raises:
-            ValueError: If no case file is loaded or unsupported software specified.
-            RuntimeError: If software initialization fails (e.g., missing licenses).
+            ValueError: If no case file loaded or invalid software name.
+            RuntimeError: If initialization fails (missing license, etc.).
             
         Example:
-            >>> # Load single backend
             >>> engine.case("IEEE_30_bus")
-            >>> engine.load(["psse"])
-            
-            >>> # Load both backends for comparison
             >>> engine.load(["psse", "pypsa"])
-            >>> print(f"PSS®E loaded: {engine.psse is not None}")
-            >>> print(f"PyPSA loaded: {engine.pypsa is not None}")
-            PSS®E loaded: True
-            PyPSA loaded: True
-               
+            
         Notes:
-            - Case file must be loaded first using engine.case()
-            - Multiple backends enable cross-platform validation studies
-            - PSS®E requires commercial license; PyPSA is open source
-            - Backends are independent and can simulate separately
+            - PSS®E requires commercial license; PyPSA is open-source
+            - Enables cross-platform validation studies
+            - Both backends are independent and can simulate separately
+            
+        TODO:
+            - Add error handling for PSS®E license failures
         """
         if self.case_file is None:
             raise ValueError("No case file set. Use `engine.case('path/to/case.RAW')` first.")
@@ -226,56 +156,33 @@ class Engine:
         bus_location: int = 1,
         connecting_bus: int = 1, # todo this should default to swing bus
     ) -> None:
-        """Add a Wave Energy Converter (WEC) farm to the power system simulation.
-        
-        Creates a WEC farm object with specified parameters and integrates it into
-        all loaded power system modelers. The farm includes realistic power output
-        time series based on WEC-Sim device-level simulations.
+        """Add a Wave Energy Converter (WEC) farm to the power system.
         
         Args:
-            farm_name (str): Human-readable name for the WEC farm.
-            size (int, optional): Number of WEC devices in the farm. Defaults to 1.
-            sim_id (int, optional): Database simulation ID for WEC data retrieval.
-                Use 1 for default data.
+            farm_name (str): Human-readable WEC farm identifier.
+            size (int, optional): Number of WEC devices in farm. Defaults to 1.
+            sim_id (int, optional): Database simulation ID for WEC data. Defaults to 1.
             model (str, optional): WEC device model type. Defaults to "RM3".
-                Supported models:
-                - "RM3": Reference Model 3 (point absorber)
-            bus_location (int, optional): Power system bus for WEC connection.
-                Defaults to 1.
-            connecting_bus (int, optional): Connection bus for network topology.
-                Defaults to 1. Typically the swing bus.
+            bus_location (int, optional): Grid bus for WEC connection. Defaults to 1.
+            connecting_bus (int, optional): Network topology connection bus. Defaults to 1.
                 
-        Returns:
-            None: Creates WECFarm object and adds to internal collections.
-            
         Raises:
-            ValueError: If specified WEC model is not supported.
-            DatabaseError: If sim_id specified but WEC data not found.
+            ValueError: If WEC model not supported.
+            DatabaseError: If sim_id WEC data not found.
             
         Example:
-            >>> # Single WEC device
-            >>> engine.apply_wec("Test WEC", size=1, bus_location=14)
-            
-            >>> # Large offshore wind farm
-            >>> engine.apply_wec(
-            ...     farm_name="North Coast Farm",
-            ...     size=20,
-            ...     model="RM3", 
-            ...     bus_location=14,
-            ...     sim_id=12
-            ... )
-            
+            >>> engine.apply_wec("North Coast Farm", size=20, bus_location=14)
             >>> print(f"Total farms: {len(engine.wec_farms)}")
-            Total farms: 2
+            Total farms: 1
             
         Notes:
-            - Farm size scales individual device power output linearly
-            - WEC data sourced from database using sim_id parameter
-            - Generator ID limited by PSS®E constraints (2-character limit)
-            - Maximum 9 farms supported due to PSS®E generator ID limitations
-            - TODO: Address PSS®E generator ID limitation for larger studies
-            - TODO: Default connecting_bus should be swing bus
+            - Farm power scales linearly with device count
+            - WEC data sourced from database using sim_id
+            - Generator ID auto-assigned based on farm order
             
+        TODO:
+            - Fix PSS®E generator ID limitation (max 9 farms)
+            - Default connecting_bus should be swing bus
         """
         wec_farm: WECFarm = WECFarm(
             farm_name=farm_name,
@@ -309,59 +216,49 @@ class Engine:
         ) -> pd.DataFrame:
             """Generate realistic time-varying load profiles for power system simulation.
             
-            Creates bus-specific load time series based on a normalized double-peak daily
-            pattern representing typical electrical demand profiles. The method scales
-            base load values from the power system case using configurable peak timing
-            and variability parameters.
+            Creates bus-specific load time series with double-peak daily pattern
+            representing typical electrical demand. Scales base case loads with
+            configurable peak timing and variability.
             
             Args:
-                morning_peak_hour (float, optional): Time of morning demand peak [hours].
-                    Defaults to 8.0 (8:00 AM).
-                evening_peak_hour (float, optional): Time of evening demand peak [hours].
-                    Defaults to 18.0 (6:00 PM).
-                morning_sigma_h (float, optional): Standard deviation for morning peak [hours].
-                    Controls peak width. Defaults to 2.0.
-                evening_sigma_h (float, optional): Standard deviation for evening peak [hours].
-                    Controls peak width. Defaults to 3.0.
-                amplitude (float, optional): Maximum variation amplitude around base load.
-                    Value of 0.30 means ±30% variation. Defaults to 0.30.
-                min_multiplier (float, optional): Minimum load multiplier (floor constraint).
-                    Defaults to 0.70 (70% of base load minimum).
+                morning_peak_hour (float, optional): Morning demand peak time [hours]. 
+                    Defaults to 8.0.
+                evening_peak_hour (float, optional): Evening demand peak time [hours]. 
+                    Defaults to 18.0.
+                morning_sigma_h (float, optional): Morning peak width [hours]. Defaults to 2.0.
+                evening_sigma_h (float, optional): Evening peak width [hours]. Defaults to 3.0.
+                amplitude (float, optional): Maximum variation around base load. 
+                    Defaults to 0.30 (±30%).
+                min_multiplier (float, optional): Minimum load multiplier. Defaults to 0.70.
                 amp_overrides (Dict[int, float], optional): Per-bus amplitude overrides.
-                    Keys are bus numbers, values are custom amplitudes. Defaults to None.
                     
             Returns:
-                pd.DataFrame: Time-indexed DataFrame with load profiles [MW].
-                    - Index: Simulation time snapshots
-                    - Columns: Bus numbers with non-zero loads
-                    - Values: Active power demand [MW]
+                pd.DataFrame: Time-indexed load profiles [MW]. Index: simulation snapshots,
+                    Columns: bus numbers, Values: active power demand.
                     
             Raises:
-                ValueError: If no power system modeler is loaded.
+                ValueError: If no power system modeler loaded.
 
-            Load Profile Characteristics:
-                - **Double-peak pattern**: Morning and evening demand peaks
-                - **Gaussian shape**: Smooth transitions between demand levels
-                - **Configurable timing**: Adjustable peak hours for different regions
-                - **Variable width**: Different peak durations via sigma parameters
-                - **Per-bus customization**: Individual amplitude scaling
-                - **Realistic constraints**: Floor/ceiling limits prevent unrealistic values
+            Example:
+                >>> # Generate standard load curves
+                >>> profiles = engine.generate_load_curves()
+                >>> print(f"Buses: {list(profiles.columns)}")
                 
-            Temporal Behavior:
-                - **Long simulations (>6h)**: Full double-peak daily profile
-                - **Short simulations (<6h)**: Flat profile to avoid artificial peaks
-                - **Base load scaling**: Original case loads used as reference values
-                - **Time-synchronized**: Matches engine.time.snapshots exactly
+                >>> # Custom peaks for industrial area
+                >>> custom = engine.generate_load_curves(
+                ...     morning_peak_hour=6.0,
+                ...     evening_peak_hour=22.0,
+                ...     amplitude=0.15
+                ... )
                 
-            Mathematical Model:
-                For each time t and bus b:
-                ```
-                shape(t) = Σ exp(-0.5 * ((hour(t) - peak_hour) / sigma)²)
-                normalized(t) = (shape(t) - mean(shape)) / std(shape)
-                load(b,t) = base_load(b) * (1 + amplitude(b) * normalized(t))
-                load(b,t) = clip(load(b,t), min_multiplier * base_load(b), 2-min_multiplier * base_load(b))
-                ```
-
+            Notes:
+                - Double-peak pattern: morning and evening demand peaks
+                - Short simulations (<6h): flat profile to avoid artificial peaks
+                - PSS®E base loads: system MVA base
+                - PyPSA base loads: aggregated by bus
+                
+            TODO:
+                - Add weekly/seasonal variation patterns
             """
 
             if self.psse is None and self.pypsa is None:
@@ -427,53 +324,32 @@ class Engine:
     ) -> None:
         """Execute time-series power system simulation across loaded backends.
         
-        Runs coordinated simulations using all initialized power system modelers
-        (PSS®E and/or PyPSA) with optional load variability and WEC farm integration.
-        Automatically manages simulation length based on available WEC data and
-        user specifications.
-        
         Args:
-            sim_length (int, optional): Number of simulation time steps to execute.
-                If None, uses full available data length. If WEC farms are present,
-                length is constrained by WEC data availability. Defaults to None.
-            load_curve (bool, optional): Enable time-varying load profiles.
-                If True, generates realistic double-peak load curves. If False,
-                uses static loads from case file. Defaults to False.
-            plot (bool, optional): Enable automatic plotting after simulation.
-                Currently reserved for future implementation. Defaults to True.
-                
-        Returns:
-            None: Simulation results stored in modeler objects and accessible
-                via engine.psse.grid and engine.pypsa.grid.
+            sim_length (int, optional): Number of simulation time steps. If None,
+                uses full available data length. Constrained by WEC data if present.
+            load_curve (bool, optional): Enable time-varying load profiles. Defaults to False.
+            plot (bool, optional): Reserved for future automatic plotting. Defaults to True.
                 
         Raises:
-            ValueError: If no power system modelers are loaded.
+            ValueError: If no power system modelers loaded.
             RuntimeError: If simulation fails in any backend.
             
         Example:
             >>> # Basic simulation with static loads
-            >>> engine.simulate(sim_length=144)  # 12 hours at 5-min intervals
+            >>> engine.simulate(sim_length=144)
             
-            >>> # Full day simulation with load variability
-            >>> engine.simulate(sim_length=288, load_curve=True)
-            
-            >>> # WEC-constrained simulation (auto-length detection)
-            >>> engine.apply_wec("Test Farm", size=5, bus_location=14)
-            >>> engine.simulate(load_curve=True)  # Length from WEC data
-            
-        Simulation Coordination:
-            - **Time synchronization**: All backends use identical time snapshots
-            - **Load profiles**: Optional time-varying demand curves
-            - **WEC integration**: Realistic renewable power injection
-            - **Cross-platform**: Simultaneous PSS®E and PyPSA execution
+            >>> # Full simulation with load variability
+            >>> engine.simulate(load_curve=True)
             
         Notes:
-            - WEC data length constraint prevents simulation errors
-            - Different WEC farms with varying data lengths may cause issues
-            - Load curve amplitude reduced (10%) for realistic daily variation
-            - Plot parameter reserved for future automatic visualization
-            - TODO: Address multi-farm data length inconsistencies
-
+            - All backends use identical time snapshots for comparison
+            - WEC data length constrains maximum simulation length
+            - Load curves use reduced amplitude (10%) for realism
+            - Results accessible via engine.psse.grid and engine.pypsa.grid
+            
+        TODO:
+            - Address multi-farm data length inconsistencies
+            - Implement automatic plotting feature
         """
 
         # show that if different farms have different wec durations this logic fails

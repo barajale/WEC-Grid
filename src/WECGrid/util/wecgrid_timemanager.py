@@ -1,12 +1,10 @@
 # File: src/wecgrid/util/wecgrid_timemanager.py
 
-"""
-Time management and coordination for WEC-Grid simulations.
+"""Time management and coordination for WEC-Grid simulations.
 
-This module provides the WECGridTimeManager dataclass for coordinating simulation
-time across all components of WEC-Grid, including power system modeling, WEC device
-simulations, and data visualization. The time manager ensures consistent temporal
-alignment between different simulation backends and renewable energy data sources.
+Provides the WECGridTimeManager dataclass for coordinating simulation time
+across WEC-Grid components including power system modeling, WEC device
+simulations, and data visualization with consistent temporal alignment.
 """
 
 from dataclasses import dataclass, field
@@ -15,38 +13,20 @@ import pandas as pd
 
 @dataclass
 class WECGridTimeManager:
-    """Centralized time coordination for multi-domain WEC-Grid simulations.
+    """Centralized time coordination for WEC-Grid simulations.
     
-    The WECGridTimeManager coordinates temporal aspects of WEC-Grid simulations,
-    ensuring synchronized time-series data across power system modeling (PSS®E, PyPSA),
-    wave energy converter simulations (WEC-Sim), and data visualization components.
-    It manages simulation time windows, sampling intervals, and snapshot generation
-    for consistent cross-platform analysis.
+    Coordinates temporal aspects across power system modeling (PSS®E, PyPSA),
+    WEC simulations (WEC-Sim), and visualization components. Manages simulation
+    time windows, sampling intervals, and ensures cross-platform alignment.
     
-    Key Capabilities:
-        - **Unified Time Reference**: Single source of truth for simulation timing
-        - **Multi-Platform Sync**: Coordinates PSS®E, PyPSA, and WEC-Sim time alignment
-        - **Flexible Duration**: Supports simulations from minutes to years
-        - **Standard Intervals**: Configurable time steps optimized for grid studies
-        - **Pandas Integration**: Native compatibility with time-series analysis
-        - **Dynamic Updates**: Runtime modification of simulation parameters
-        
     Attributes:
-        start_time (datetime): Simulation start timestamp.
-            Defaults to current date at midnight (00:00:00).
-            Used as reference point for all time-series data alignment.
-            
-        sim_length (int): Number of simulation time steps.
-            Defaults to 288 (24 hours at 5-minute intervals).
-            Determines total simulation duration based on frequency setting.
-            
-        freq (str): Pandas frequency string for time step intervals.
-            Defaults to "5T" (5-minute intervals).
-            Supports standard pandas frequency codes:
-            - "1T": 1-minute intervals (high resolution)
-            - "5T": 5-minute intervals (standard grid modeling)
-            - "15T": 15-minute intervals (load dispatch)
-            - "1H": Hourly intervals (planning studies)
+        start_time (datetime): Simulation start timestamp. Defaults to current 
+            date at midnight.
+        sim_length (int): Number of simulation time steps. Defaults to 288
+            (24 hours at 5-minute intervals).
+        freq (str): Pandas frequency string for time intervals. Defaults to "5T"
+            (5-minute intervals).
+    """
             
         sim_stop (datetime): Calculated simulation end timestamp.
             Automatically computed from start_time, sim_length, and freq.
