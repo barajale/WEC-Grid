@@ -7,6 +7,7 @@ results, supporting cross-platform comparison between PSS®E and PyPSA modeling 
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from typing import Any
 
 
 class WECGridPlotter:
@@ -35,7 +36,7 @@ class WECGridPlotter:
         - Includes specialized WEC farm analysis capabilities
     """
     
-    def __init__(self, engine):
+    def __init__(self, engine: Any):
         """Initialize WECGridPlotter with WEC-GRID Engine.
         
         Args:

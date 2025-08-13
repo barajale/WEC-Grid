@@ -192,3 +192,9 @@ Keep your docstrings up to date and rebuild the docs to refresh these pages.
 - **WECSim path**: you must set `engine.wec_sim.wec_sim_path` before calling the runner.
 - **Custom RAW files**: pass a full path to `engine.case()` to use your own grids.
 - **DB location**: the default SQLite file is managed via `WECGridDB`; see `database.md` for details (optional page).
+
+---
+
+## API Reference
+
+![mkapi](wecgrid.engine.Engine)

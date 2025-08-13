@@ -2,30 +2,58 @@ site_name: WEC-Grid
 site_description: Integrating Wave Energy Converter Models into Power System Simulations
 repo_url: https://github.com/acep/WEC-GRID
 theme:
-  name: darkly
-  features:
-    - navigation.sections
-    - navigation.expand
-    - toc.integrate
+  name: ivory
+  favicon: images/logo.png  # Browser tab icon
+  logo: images/logo.png     # Main site logo
+  nav_style: dark
+
 plugins:
   - search
-  - mkdocstrings:
-      handlers:
-        python:
-          paths: [src]   # points to your code
+  - mkapi:
+      src_dirs: [src]
+      filters: [
+        "!^_",        # Exclude private methods
+        "!^test_",    # Exclude test functions
+      ]
+  # Temporarily disabled to reduce warnings during initial setup
+  # - mkdocstrings:
+  #     handlers:
+  #       python:
+  #         paths: [src]
+  #         options:
+  #           show_source: false
+  #           docstring_style: google
+  #           show_signature_annotations: false
+  #           show_if_no_docstring: false
+  #           filters: ["!^_"]
+  #           ignore_init_summary: true
+  #           merge_init_into_class: true
 nav:
-  - Home: index.md
-  - Install: install.md
-  - Quickstart: quickstart.md
+  - Getting Started:
+      - Introduction: index.md
+      - Installation: install.md
+      - Quick Start: quickstart.md
   - User Guide:
-      - Engine: engine.md
-      - Modelers (overview): modelers.md
-      - PSS®E: psse.md
-      - PyPSA: pypsa.md
-      - WEC devices: wec.md
-      - WEC-SIM runner: wecsim.md
-      - Data & Models: data-models.md
-      - Database: database.md
-      - Plotting: plotting.md
-      - Troubleshooting: troubleshooting.md
-  - Examples: examples.md
+      - Software Design: user-guide/software-design.md
+      - Components:
+          - Engine: user-guide/components/engine.md
+          - Database: user-guide/components/database.md
+          - Time Manager: user-guide/components/time-manager.md
+          - Plotting: user-guide/components/plotting.md
+          - Power System Modelers: user-guide/components/modelers.md
+          - PSS/E: user-guide/components/psse.md
+          - PyPSA: user-guide/components/pypsa.md
+          - WEC-Sim Interface: user-guide/components/wecsim.md
+          - WEC Components: user-guide/components/wec.md
+      - Built-in Models:
+          - Grid Models: user-guide/models/grid-models.md
+          - WEC Models: user-guide/models/wec-models.md
+  - Examples & Tutorials:
+      - Basic Example: examples/basic-example.md
+      - Example 1 (TBD): examples/example-1.md
+      - Example 2 (TBD): examples/example-2.md
+      - Example 3 (TBD): examples/example-3.md
+  - Reference:
+      - API Reference: reference/api.md
+      - Troubleshooting: reference/troubleshooting.md
+      - Citation: reference/citation.md

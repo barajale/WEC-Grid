@@ -88,7 +88,7 @@ class WECGridDB:
         Creates required tables for simulation data storage including
         simulation runs, WEC devices, and time series data with appropriate
         foreign key constraints and indexes.
-        """
+        
         with self.connection() as conn:
             cursor = conn.cursor()
             
@@ -384,7 +384,6 @@ class WECGridDB:
         Example:
             >>> results = db.query("SELECT * FROM simulation_runs WHERE id = ?", 
             ...                    params=(1,), return_type="df")
-        """
             
             >>> # DataFrame results for analysis
             >>> power_data = db.query(
