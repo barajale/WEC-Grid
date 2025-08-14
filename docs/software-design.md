@@ -1,23 +1,37 @@
 # Software Design
 
-## Overview
-
-WEC-Grid is designed as a modular framework for integrating wave energy converter (WEC) models into power system simulations. The software architecture follows object-oriented principles with clear separation of concerns between different components.
+WEC-Grid follows a modular architecture with clear separation between marine energy and power system domains.
 
 ## System Architecture
 
-[Include your UML diagrams and flowcharts here]
+### Basic Overview
+
+<img src="../diagrams/uml/WEC_Grid_uml.png" alt="System Architecture Overview" width="600"/>
+
+<img src="../diagrams/workflow/WEC_Grid_workflow.png" alt="Flowchart" width="600"/>
+
+<img src="../diagrams/sequence/WEC_Grid_sequence.png" alt="Sequence Diagram" width="600"/>
+ 
 
 ## Design Principles
 
-- **Modularity**: Each component has a specific responsibility
-- **Extensibility**: New power system backends and WEC models can be easily added
-- **Interoperability**: Seamless integration between WEC-Sim and power system tools
-- **Data Persistence**: Centralized database for simulation results and configuration
+- **Bridge Pattern**: Unified interface across different power system backends
+- **Modularity**: Clear separation between WEC modeling and power system analysis
+- **Extensibility**: Easy integration of new models and backends
+- **Data Persistence**: Centralized SQLite database for reproducible research
 
-## Component Interaction
 
-[Describe how the different components work together]
+### Engine
+Central coordinator managing simulation workflow and component interaction.
+
+### Power System Modelers  
+Standardized interface for PSS®E and PyPSA backends with consistent data formats.
+
+### WEC Modeling
+Device and farm-level modeling with integration to WEC-Sim for high-fidelity simulation.
+
+### Data Management
+SQLite database with structured storage for simulation metadata and time-series results.
 
 ## Workflow
 
