@@ -551,7 +551,7 @@ class PyPSAModeler(PowerSystemModeler):
         for snapshot in tqdm(self.engine.time.snapshots, desc="PyPSA Simulating", unit="step"):
             # WEC generators
             for farm in self.engine.wec_farms:
-                power = farm.power_at_snapshot(snapshot) * farm.BASE  # pu (1.0 MVA ) -> MW 
+                power = farm.power_at_snapshot(snapshot) * self.sbase  # pu -> MW 
                 # write to the DataFrame, not the Series view
                 self.network.generators.at[f"W{farm.id}", "p_set"] = power
 

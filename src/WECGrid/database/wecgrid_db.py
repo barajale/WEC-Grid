@@ -635,7 +635,7 @@ class WECGridDB:
             self._store_all_gridstate_timeseries(grid_sim_id, software_obj, software_name, timeManager)
         
         # Store WEC farm data if available
-        if hasattr(self.engine, 'wec_farm') and self.engine.wec_farm is not None:
+        if hasattr(self.engine, 'wec_farms') and self.engine.wec_farms:
             print("Storing WEC farm data...")
             self._store_wec_farm_data(grid_sim_id)
         
@@ -748,17 +748,23 @@ class WECGridDB:
         Args:
             grid_sim_id (int): Grid simulation ID to link WEC data to.
         """
-        wec_farm = self.engine.wec_farm
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            
+            for farm in self.engine.wec_farms:
+                print(f"  Storing WEC farm: {farm.farm_name}")
+                
+                # Store wec_integrations record linking farm to grid simulation
+                cursor.execute("""
+                    INSERT OR REPLACE INTO wec_integrations 
+                    (grid_sim_id, wec_sim_id, farm_name, bus_location, num_devices)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (grid_sim_id, farm.wec_sim_id, farm.farm_name, farm.bus_location, farm.size))
+                
+                print(f"    - Farm '{farm.farm_name}' at bus {farm.bus_location}")
+                print(f"    - WEC sim ID: {farm.wec_sim_id}, devices: {farm.size}")
         
-        # For now, just log that WEC farm data was found
-        # TODO: Implement actual WEC data storage when WEC integration is complete
-        print(f"  Found WEC farm: {type(wec_farm)}")
-        print(f"  WEC farm storage not yet implemented - placeholder for future development")
-        
-        # Future implementation would:
-        # 1. Create wec_simulations record
-        # 2. Create wec_integrations record linking to grid_sim_id  
-        # 3. Store wec_power_results time-series data)
+        print(f"  Stored {len(self.engine.wec_farms)} WEC farm integration(s)")
                                   
     def _get_timeseries_value(self, timeseries_dict, parameter: str, component_id: int, timestamp):
         """Extract time-series value for specific component and timestamp.

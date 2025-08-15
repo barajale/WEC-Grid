@@ -364,7 +364,7 @@ class PSSEModeler(PowerSystemModeler):
             The following PSS®E API calls are used for simulation:
             
             - ``machine_chng_4()``: Update WEC generator active power output
-                - PG: Active power generation [MW]
+                - PG: Active power generation [MW] 
             - ``load_data_6()``: Update bus load values (if load_curve provided)
                 - P: Active power load [MW]
                 - Q: Reactive power load [MVAr]
@@ -374,11 +374,11 @@ class PSSEModeler(PowerSystemModeler):
 
         for snapshot in tqdm(self.engine.time.snapshots, desc="PSS®E Simulating", unit="step"):
             for farm in self.engine.wec_farms:
-                power = farm.power_at_snapshot(snapshot) # pu in MW (1.0 MVA)
+                power = farm.power_at_snapshot(snapshot) # pu sbase
                 ierr = self.psspy.machine_chng_4(
                         ibus=farm.bus_location, 
                         id=f"W{farm.id}", 
-                        realar=[power * farm.BASE] + [self._f]*16) > 0 # no need to use Farm.BASE becuase base was passed in add_wec_farm
+                        realar=[power * self.sbase] + [self._f]*16) > 0
                 if ierr > 0: 
                     raise Exception(f"Error setting generator power at snapshot {snapshot}")
             if load_curve is not None:
