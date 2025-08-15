@@ -3,28 +3,13 @@
 SQLite database interface for WEC-Grid simulation data management, including 
 time series storage, configuration persistence, and result archival.
 
-The database supports:
-    - Time series data: WEC power output, grid states, environmental conditions
-    - Configuration management: Simulation parameters, WEC farm layouts
-    - Result archival: Long-term storage with metadata for reproducibility
-    - Cross-platform compatibility: SQLite backend for portability
 
-Example:
-    >>> from wecgrid.database import WECGridDB
-    >>> db = WECGridDB()
-    >>> with db.connection() as conn:
-    ...     results = db.query("SELECT * FROM simulation_runs")
-
-Notes:
-    - Database file created automatically on first connection
-    - Thread-safe for concurrent read operations
-    - Schema evolution supported through migration scripts
 """
 
 import os
 import sqlite3
 from contextlib import contextmanager
-from typing import Optional
+from typing import Optional, List
 import pandas as pd
 
 # default location for the DB file
@@ -37,25 +22,125 @@ class WECGridDB:
     
     Provides database operations for storing WEC simulation results, device
     configurations, and time series data. Supports both raw SQL queries and
-    pandas DataFrame integration.
+    pandas DataFrame integration with multi-software backend support.
+    
+    Database Schema Overview:
+    ------------------------
+    Metadata Tables:
+        - grid_simulations: Grid simulation metadata and parameters
+        - wec_simulations: WEC-Sim simulation parameters and wave conditions
+        - wec_integrations: Links WEC farms to grid connection points
+        
+    PSS®E Results Tables:
+        - psse_bus_results: Bus voltages, power injections [pu on S_base]
+        - psse_generator_results: Generator outputs [pu on S_base] 
+        - psse_load_results: Load demands [pu on S_base]
+        - psse_line_results: Line loadings [% of thermal rating]
+        
+    PyPSA Results Tables:
+        - pypsa_bus_results: Same schema as PSS®E for cross-platform comparison
+        - pypsa_generator_results: Same schema as PSS®E
+        - pypsa_load_results: Same schema as PSS®E  
+        - pypsa_line_results: Same schema as PSS®E
+        
+    WEC Simulation Data:
+        - wec_simulations: Metadata including wave spectrum, class, and conditions
+        - wec_power_results: High-resolution WEC device power output [Watts]
+    
+    Key Design Features:
+        - Software-specific tables enable multi-backend comparisons
+        - All grid power values in per-unit on system S_base (MVA)
+        - GridState DataFrame schema alignment for direct data mapping
+        - Optional storage model - persist only when explicitly requested
     
     Attributes:
         db_path (str): Path to SQLite database file.
         
     Example:
         >>> db = WECGridDB()
+        >>> db.check_and_initialize()  # Ensure schema exists
         >>> with db.connection() as conn:
-        ...     results = db.query("SELECT * FROM simulation_runs")
+        ...     results = db.query("SELECT * FROM grid_simulations", return_type="df")
+    
+    Notes:
+        Default SQLite3 Database is stored in src/wecgrid/database/WEC-Grid.db
+        Database is automatically initialized on first use if not present.
     """
     
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, engine, db_path: Optional[str] = None):
         """Initialize database handler.
         
         Args:
             db_path (str, optional): Path to SQLite database file. Defaults
                 to package database location if None.
         """
+        self.engine = engine
         self.db_path = db_path or _DEFAULT_DB
+        self.check_and_initialize()
+        
+    def check_and_initialize(self):
+        """Check if database exists and has correct schema, initialize if needed.
+        
+        Validates that all required tables exist with proper structure.
+        Creates database and initializes schema if missing or incomplete.
+        
+        Returns:
+            bool: True if database was already valid, False if initialization was needed.
+        """
+        if not os.path.exists(self.db_path):
+            print(f"Database not found at {self.db_path}. Creating new database...")
+            self.initialize_database()
+            return False
+            
+        # Check if all required tables exist
+        required_tables = [
+            'grid_simulations', 'wec_simulations', 'wec_integrations',
+            'psse_bus_results', 'psse_generator_results', 'psse_load_results', 'psse_line_results',
+            'pypsa_bus_results', 'pypsa_generator_results', 'pypsa_load_results', 'pypsa_line_results',
+            'wec_power_results'
+        ]
+        
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            existing_tables = {row[0] for row in cursor.fetchall()}
+            
+            missing_tables = set(required_tables) - existing_tables
+            if missing_tables:
+                print(f"Missing tables: {missing_tables}. Reinitializing database schema...")
+                self.initialize_database()
+                return False
+                
+        # Check for missing columns in existing tables and migrate
+        self._migrate_schema()
+                
+        #print("Database schema validated successfully.")
+        return True
+
+    def _migrate_schema(self):
+        """Migrate database schema to add missing columns."""
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            
+            # Check if wave_spectrum and wave_class columns exist in wec_simulations
+            cursor.execute("PRAGMA table_info(wec_simulations)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            migrations_applied = False
+            
+            if 'wave_spectrum' not in columns:
+                print("Adding wave_spectrum column to wec_simulations table...")
+                cursor.execute("ALTER TABLE wec_simulations ADD COLUMN wave_spectrum TEXT")
+                migrations_applied = True
+                
+            if 'wave_class' not in columns:
+                print("Adding wave_class column to wec_simulations table...")
+                cursor.execute("ALTER TABLE wec_simulations ADD COLUMN wave_class TEXT")
+                migrations_applied = True
+                
+            if migrations_applied:
+                conn.commit()
+                print("Database schema updated successfully.")
 
     @contextmanager
     def connection(self):
@@ -63,14 +148,7 @@ class WECGridDB:
         
         Provides transaction safety with automatic commit on success and
         rollback on exceptions. Connection closed automatically.
-        
-        Yields:
-            sqlite3.Connection: Database connection for SQL operations.
             
-        Example:
-            >>> with db.connection() as conn:
-            ...     cursor = conn.cursor()
-            ...     cursor.execute("SELECT * FROM simulation_runs")
         """
         conn = sqlite3.connect(self.db_path)
         try:
@@ -82,456 +160,321 @@ class WECGridDB:
         finally:
             conn.close()
             
-    def initialize_db(self):
+    def initialize_database(self):
         """Initialize database schema with WEC-Grid tables and indexes.
         
-        Creates required tables for simulation data storage including
-        simulation runs, WEC devices, and time series data with appropriate
-        foreign key constraints and indexes.
+        Creates all required tables according to the finalized WEC-Grid schema:
+        - Metadata tables for simulation parameters
+        - Software-specific result tables (PSS®E, PyPSA) 
+        - WEC time-series data tables
+        - Performance indexes for efficient queries
         
-        with self.connection() as conn:
-            cursor = conn.cursor()
-            
-            # Enable foreign key constraints
-            cursor.execute("PRAGMA foreign_keys = ON")
-            **simulation_runs table**:
-            ```sql
-            CREATE TABLE simulation_runs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                description TEXT,
-                start_time TIMESTAMP NOT NULL,
-                end_time TIMESTAMP,
-                frequency TEXT NOT NULL,
-                status TEXT DEFAULT 'pending',
-                config_json TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            ```
-            
-            **wec_devices table**:
-            ```sql
-            CREATE TABLE wec_devices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                device_type TEXT NOT NULL,
-                rated_power REAL NOT NULL CHECK(rated_power > 0),
-                location_lat REAL CHECK(location_lat BETWEEN -90 AND 90),
-                location_lon REAL CHECK(location_lon BETWEEN -180 AND 180),
-                depth REAL,
-                installation_date DATE,
-                config_json TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            ```
-            
-            **timeseries_data table**:
-            ```sql
-            CREATE TABLE timeseries_data (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                simulation_id INTEGER NOT NULL,
-                device_id INTEGER,
-                timestamp TIMESTAMP NOT NULL,
-                power_output REAL,
-                wave_height REAL,
-                wave_period REAL,
-                wind_speed REAL,
-                grid_frequency REAL,
-                voltage REAL,
-                current REAL,
-                data_source TEXT DEFAULT 'simulation',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (simulation_id) REFERENCES simulation_runs(id) ON DELETE CASCADE,
-                FOREIGN KEY (device_id) REFERENCES wec_devices(id) ON DELETE SET NULL
-            );
-            ```
-            
-        Indexes Created:
-            **Performance optimization for common query patterns**:
-            ```sql
-            -- Temporal queries (most common)
-            CREATE INDEX idx_timeseries_timestamp ON timeseries_data(timestamp);
-            CREATE INDEX idx_timeseries_sim_time ON timeseries_data(simulation_id, timestamp);
-            
-            -- Device-specific analysis
-            CREATE INDEX idx_timeseries_device ON timeseries_data(device_id);
-            CREATE INDEX idx_timeseries_device_time ON timeseries_data(device_id, timestamp);
-            
-            -- Simulation metadata
-            CREATE INDEX idx_simulation_name ON simulation_runs(name);
-            CREATE INDEX idx_simulation_time_range ON simulation_runs(start_time, end_time);
-            
-            -- Device location queries
-            CREATE INDEX idx_device_location ON wec_devices(location_lat, location_lon);
-            ```
-            
-        Example:
-            >>> # Initialize new database
-            >>> db = WECGridDB("/path/to/new/database.db")
-            >>> db.initialize_db()
-            >>> print("Database schema created successfully")
-            
-            >>> # Verify table creation
-            >>> tables = db.query(
-            ...     "SELECT name FROM sqlite_master WHERE type='table'",
-            ...     return_type="df"
-            ... )
-            >>> print(f"Created tables: {sorted(tables['name'].tolist())}")
-            Created tables: ['simulation_runs', 'timeseries_data', 'wec_devices']
-            
-            >>> # Check index creation
-            >>> indexes = db.query(
-            ...     "SELECT name FROM sqlite_master WHERE type='index'",
-            ...     return_type="df"
-            ... )
-            >>> print(f"Created indexes: {len(indexes)} total")
-            
-        Default Data:
-            **Reference data for consistent simulation setup**:
-            ```sql
-            -- Common device types
-            INSERT INTO device_types (name, description) VALUES
-                ('RM3', 'Reference Model 3 - Point Absorber'),
-                ('OWC', 'Oscillating Water Column'),
-                ('Attenuator', 'Multi-body Wave Energy Converter');
-                
-            -- Simulation status values
-            INSERT INTO simulation_status (status, description) VALUES
-                ('pending', 'Simulation queued for execution'),
-                ('running', 'Simulation currently executing'),
-                ('completed', 'Simulation finished successfully'),
-                ('failed', 'Simulation terminated with errors');
-            ```
-            
-        Views Created:
-            **Common analysis patterns as database views**:
-            ```sql
-            -- Device power summary
-            CREATE VIEW device_power_summary AS
-            SELECT 
-                d.name as device_name,
-                d.rated_power,
-                COUNT(t.id) as data_points,
-                AVG(t.power_output) as avg_power,
-                MAX(t.power_output) as peak_power,
-                MIN(t.timestamp) as first_data,
-                MAX(t.timestamp) as last_data
-            FROM wec_devices d
-            LEFT JOIN timeseries_data t ON d.id = t.device_id
-            GROUP BY d.id, d.name, d.rated_power;
-            
-            -- Simulation performance metrics
-            CREATE VIEW simulation_metrics AS
-            SELECT 
-                s.name as simulation_name,
-                s.start_time,
-                s.end_time,
-                s.frequency,
-                COUNT(DISTINCT t.device_id) as device_count,
-                COUNT(t.id) as total_data_points,
-                AVG(t.power_output) as avg_total_power
-            FROM simulation_runs s
-            LEFT JOIN timeseries_data t ON s.id = t.simulation_id
-            GROUP BY s.id;
-            ```
-            
-        Triggers for Data Integrity:
-            **Automatic timestamp updates and validation**:
-            ```sql
-            -- Update timestamp on simulation_runs changes
-            CREATE TRIGGER update_simulation_timestamp 
-            AFTER UPDATE ON simulation_runs
-            BEGIN
-                UPDATE simulation_runs 
-                SET updated_at = CURRENT_TIMESTAMP 
-                WHERE id = NEW.id;
-            END;
-            
-            -- Validate timestamp ordering in time series
-            CREATE TRIGGER validate_timeseries_order
-            BEFORE INSERT ON timeseries_data
-            BEGIN
-                SELECT CASE 
-                    WHEN NEW.timestamp < (
-                        SELECT start_time FROM simulation_runs 
-                        WHERE id = NEW.simulation_id
-                    )
-                    THEN RAISE(ABORT, 'Timestamp before simulation start')
-                END;
-            END;
-            ```
-            
-        Error Handling:
-            **Graceful handling of existing schemas**:
-            - Checks for existing tables before creation
-            - Skips initialization if schema already exists
-            - Reports creation status for each component
-            - Handles partial initialization recovery
-            
-        Migration Support:
-            For existing databases with older schemas:
-            ```python
-            # Check schema version
-            version = db.query("PRAGMA user_version")[0][0]
-            if version < CURRENT_SCHEMA_VERSION:
-                db.migrate_schema(from_version=version)
-            ```
-            
-        Performance Optimization:
-            **Post-creation optimization steps**:
-            - ANALYZE command for query planner statistics
-            - Vacuum command for optimal file organization
-            - Page size optimization for time series workloads
-            - Memory settings for improved performance
-            
-        Notes:
-            - Safe to call multiple times (idempotent operation)
-            - Creates database file if it doesn't exist
-            - Enables foreign key constraints for data integrity
-            - Sets optimal SQLite pragmas for WEC-Grid workloads
-            - Schema versioning support for future migrations
-            
-        See Also:
-            connection: Context manager used for schema creation
-            query: Method for verifying schema creation success
+        All existing data is preserved if tables already exist.
         """
         with self.connection() as conn:
             cursor = conn.cursor()
             
-            # Enable foreign key constraints
-            cursor.execute("PRAGMA foreign_keys = ON")
+            # ================================================================
+            # METADATA TABLES
+            # ================================================================
             
-            # Create simulation_runs table
+            # Grid simulation metadata
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS simulation_runs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE,
-                    description TEXT,
-                    start_time TIMESTAMP NOT NULL,
-                    end_time TIMESTAMP,
-                    frequency TEXT NOT NULL,
-                    status TEXT DEFAULT 'pending',
-                    config_json TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                CREATE TABLE IF NOT EXISTS grid_simulations (
+                    grid_sim_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sim_name TEXT,
+                    case_name TEXT NOT NULL,
+                    psse BOOLEAN DEFAULT FALSE,
+                    pypsa BOOLEAN DEFAULT FALSE,
+                    sbase_mva REAL NOT NULL,
+                    sim_start_time TEXT NOT NULL,
+                    sim_end_time TEXT,
+                    delta_time INTEGER,
+                    notes TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(case_name, psse, pypsa, sim_start_time)
                 )
             """)
             
-            # Create wec_devices table
+            # WEC simulation parameters
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS wec_devices (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    device_type TEXT NOT NULL,
-                    rated_power REAL NOT NULL CHECK(rated_power > 0),
-                    location_lat REAL CHECK(location_lat BETWEEN -90 AND 90),
-                    location_lon REAL CHECK(location_lon BETWEEN -180 AND 180),
-                    depth REAL,
-                    installation_date DATE,
-                    config_json TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                CREATE TABLE IF NOT EXISTS wec_simulations (
+                    wec_sim_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    model_type TEXT NOT NULL,
+                    sim_duration_sec REAL NOT NULL,
+                    delta_time REAL NOT NULL,
+                    wave_height_m REAL,
+                    wave_period_sec REAL,
+                    wave_spectrum TEXT,
+                    wave_class TEXT,
+                    wave_seed INTEGER,
+                    simulation_hash TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             
-            # Create timeseries_data table
+            # WEC-Grid integration mapping
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS timeseries_data (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    simulation_id INTEGER NOT NULL,
-                    device_id INTEGER,
-                    timestamp TIMESTAMP NOT NULL,
-                    power_output REAL,
-                    wave_height REAL,
-                    wave_period REAL,
-                    wind_speed REAL,
-                    grid_frequency REAL,
-                    voltage REAL,
-                    current REAL,
-                    data_source TEXT DEFAULT 'simulation',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (simulation_id) REFERENCES simulation_runs(id) ON DELETE CASCADE,
-                    FOREIGN KEY (device_id) REFERENCES wec_devices(id) ON DELETE SET NULL
+                CREATE TABLE IF NOT EXISTS wec_integrations (
+                    integration_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    grid_sim_id INTEGER NOT NULL,
+                    wec_sim_id INTEGER NOT NULL,
+                    farm_name TEXT NOT NULL,
+                    bus_location INTEGER NOT NULL,
+                    num_devices INTEGER NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (grid_sim_id) REFERENCES grid_simulations(grid_sim_id) ON DELETE CASCADE,
+                    FOREIGN KEY (wec_sim_id) REFERENCES wec_simulations(wec_sim_id) ON DELETE CASCADE
                 )
             """)
             
-            # Create performance indexes
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_timeseries_timestamp ON timeseries_data(timestamp)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_timeseries_sim_time ON timeseries_data(simulation_id, timestamp)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_timeseries_device ON timeseries_data(device_id)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_simulation_name ON simulation_runs(name)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_device_location ON wec_devices(location_lat, location_lon)")
+            # ================================================================
+            # PSS®E-SPECIFIC TABLES (GridState Schema Alignment)
+            # ================================================================
             
-            # Optimize database for time series workloads
-            cursor.execute("PRAGMA journal_mode = WAL")  # Write-Ahead Logging for better concurrency
-            cursor.execute("PRAGMA synchronous = NORMAL")  # Balance safety and performance
-            cursor.execute("PRAGMA cache_size = -64000")  # 64MB cache
-            cursor.execute("PRAGMA temp_store = MEMORY")  # Use memory for temporary tables
+            # PSS®E Bus Results
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS psse_bus_results (
+                    grid_sim_id INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    bus INTEGER NOT NULL,
+                    bus_name TEXT,
+                    type TEXT,
+                    p REAL,
+                    q REAL,
+                    v_mag REAL,
+                    angle_deg REAL,
+                    vbase REAL,
+                    PRIMARY KEY (grid_sim_id, timestamp, bus),
+                    FOREIGN KEY (grid_sim_id) REFERENCES grid_simulations(grid_sim_id) ON DELETE CASCADE
+                )
+            """)
+            
+            # PSS®E Generator Results
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS psse_generator_results (
+                    grid_sim_id INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    gen INTEGER NOT NULL,
+                    gen_name TEXT,
+                    bus INTEGER NOT NULL,
+                    p REAL,
+                    q REAL,
+                    mbase REAL,
+                    status INTEGER,
+                    PRIMARY KEY (grid_sim_id, timestamp, gen),
+                    FOREIGN KEY (grid_sim_id) REFERENCES grid_simulations(grid_sim_id) ON DELETE CASCADE
+                )
+            """)
+            
+            # PSS®E Load Results
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS psse_load_results (
+                    grid_sim_id INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    load INTEGER NOT NULL,
+                    load_name TEXT,
+                    bus INTEGER NOT NULL,
+                    p REAL,
+                    q REAL,
+                    status INTEGER,
+                    PRIMARY KEY (grid_sim_id, timestamp, load),
+                    FOREIGN KEY (grid_sim_id) REFERENCES grid_simulations(grid_sim_id) ON DELETE CASCADE
+                )
+            """)
+            
+            # PSS®E Line Results
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS psse_line_results (
+                    grid_sim_id INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    line INTEGER NOT NULL,
+                    line_name TEXT,
+                    ibus INTEGER NOT NULL,
+                    jbus INTEGER NOT NULL,
+                    line_pct REAL,
+                    status INTEGER,
+                    PRIMARY KEY (grid_sim_id, timestamp, line),
+                    FOREIGN KEY (grid_sim_id) REFERENCES grid_simulations(grid_sim_id) ON DELETE CASCADE
+                )
+            """)
+            
+            # ================================================================
+            # PyPSA-SPECIFIC TABLES (Identical to PSS®E for Cross-Platform Comparison)
+            # ================================================================
+            
+            # PyPSA Bus Results
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pypsa_bus_results (
+                    grid_sim_id INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    bus INTEGER NOT NULL,
+                    bus_name TEXT,
+                    type TEXT,
+                    p REAL,
+                    q REAL,
+                    v_mag REAL,
+                    angle_deg REAL,
+                    vbase REAL,
+                    PRIMARY KEY (grid_sim_id, timestamp, bus),
+                    FOREIGN KEY (grid_sim_id) REFERENCES grid_simulations(grid_sim_id) ON DELETE CASCADE
+                )
+            """)
+            
+            # PyPSA Generator Results
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pypsa_generator_results (
+                    grid_sim_id INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    gen INTEGER NOT NULL,
+                    gen_name TEXT,
+                    bus INTEGER NOT NULL,
+                    p REAL,
+                    q REAL,
+                    mbase REAL,
+                    status INTEGER,
+                    PRIMARY KEY (grid_sim_id, timestamp, gen),
+                    FOREIGN KEY (grid_sim_id) REFERENCES grid_simulations(grid_sim_id) ON DELETE CASCADE
+                )
+            """)
+            
+            # PyPSA Load Results
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pypsa_load_results (
+                    grid_sim_id INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    load INTEGER NOT NULL,
+                    load_name TEXT,
+                    bus INTEGER NOT NULL,
+                    p REAL,
+                    q REAL,
+                    status INTEGER,
+                    PRIMARY KEY (grid_sim_id, timestamp, load),
+                    FOREIGN KEY (grid_sim_id) REFERENCES grid_simulations(grid_sim_id) ON DELETE CASCADE
+                )
+            """)
+            
+            # PyPSA Line Results
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS pypsa_line_results (
+                    grid_sim_id INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    line INTEGER NOT NULL,
+                    line_name TEXT,
+                    ibus INTEGER NOT NULL,
+                    jbus INTEGER NOT NULL,
+                    line_pct REAL,
+                    status INTEGER,
+                    PRIMARY KEY (grid_sim_id, timestamp, line),
+                    FOREIGN KEY (grid_sim_id) REFERENCES grid_simulations(grid_sim_id) ON DELETE CASCADE
+                )
+            """)
+            
+            # ================================================================
+            # WEC TIME-SERIES DATA
+            # ================================================================
+            
+            # WEC Power Results (High-Resolution Time Series)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS wec_power_results (
+                    wec_sim_id INTEGER NOT NULL,
+                    time_sec REAL NOT NULL,
+                    device_index INTEGER NOT NULL,
+                    p_w REAL,
+                    q_var REAL,
+                    wave_elevation_m REAL,
+                    PRIMARY KEY (wec_sim_id, time_sec, device_index),
+                    FOREIGN KEY (wec_sim_id) REFERENCES wec_simulations(wec_sim_id) ON DELETE CASCADE
+                )
+            """)
+            
+            # ================================================================
+            # PERFORMANCE INDEXES
+            # ================================================================
+            
+            # Grid simulation indexes
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_grid_sim_time ON grid_simulations(sim_start_time)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_grid_sim_case ON grid_simulations(case_name)")
+            
+            # PSS®E result indexes
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_psse_bus_time ON psse_bus_results(grid_sim_id, timestamp)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_psse_gen_time ON psse_generator_results(grid_sim_id, timestamp)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_psse_load_time ON psse_load_results(grid_sim_id, timestamp)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_psse_line_time ON psse_line_results(grid_sim_id, timestamp)")
+            
+            # PyPSA result indexes
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_pypsa_bus_time ON pypsa_bus_results(grid_sim_id, timestamp)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_pypsa_gen_time ON pypsa_generator_results(grid_sim_id, timestamp)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_pypsa_load_time ON pypsa_load_results(grid_sim_id, timestamp)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_pypsa_line_time ON pypsa_line_results(grid_sim_id, timestamp)")
+            
+            # WEC time-series indexes
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_wec_power_time ON wec_power_results(wec_sim_id, time_sec)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_wec_integration ON wec_integrations(grid_sim_id, wec_sim_id)")
+            
+            print("Database schema initialized successfully.")
+            
+    def clean_database(self):
+        """Delete the current database and reinitialize with fresh schema.
+        
+        WARNING: This will permanently delete all stored simulation data.
+        Use with caution - all existing data will be lost.
+        
+        Returns:
+            bool: True if database was successfully cleaned and reinitialized.
+        
+        Notes: 
+            Wasn't working if my Jupyter Kernal was still going, need to restart then call
+        Example:
+            >>> engine.database.clean_database()
+            WARNING: This will delete all data in the database!
+            Database cleaned and reinitialized successfully.
+        """
+        print("WARNING: This will delete all data in the database!")
+        
+        # Close any existing connections by creating a temporary one and closing it
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.close()
+        except:
+            pass
+        
+        # Delete the database file if it exists
+        if os.path.exists(self.db_path):
+            try:
+                os.remove(self.db_path)
+                print(f"Deleted existing database: {self.db_path}")
+            except OSError as e:
+                print(f"Error deleting database file: {e}")
+                return False
+        
+        # Reinitialize with fresh schema
+        try:
+            self.initialize_database()
+            print("Database cleaned and reinitialized successfully.")
+            return True
+        except Exception as e:
+            print(f"Error reinitializing database: {e}")
+            return False
+
         
     def query(self, sql: str, params: tuple = None, return_type: str = "raw"):
         """Execute SQL query with flexible result formatting.
-
+        
         Args:
-            sql (str): SQL query string with optional ? parameter placeholders.
-            params (tuple, optional): Values for SQL parameters.
-            return_type (str): Result format - "raw" (tuples), "df" (DataFrame), 
-                or "dict" (dictionaries). Defaults to "raw".
-
+            sql (str): SQL query string.
+            params (tuple, optional): Query parameters for safe substitution.
+            return_type (str): Format for results - 'raw', 'df', or 'dict'.
+            
         Returns:
-            Query results in requested format: list of tuples (raw), 
-            pandas DataFrame (df), or list of dictionaries (dict).
-
+            Results in specified format:
+            - 'raw': List of tuples (default SQLite format)
+            - 'df': pandas DataFrame with column names
+            - 'dict': List of dictionaries with column names as keys
+            
         Example:
-            >>> results = db.query("SELECT * FROM simulation_runs WHERE id = ?", 
-            ...                    params=(1,), return_type="df")
-            
-            >>> # DataFrame results for analysis
-            >>> power_data = db.query(
-            ...     "SELECT timestamp, power_output FROM timeseries_data "
-            ...     "WHERE simulation_id = ? AND timestamp BETWEEN ? AND ?",
-            ...     params=(1, "2023-01-01 00:00:00", "2023-01-01 23:59:59"),
-            ...     return_type="df"
-            ... )
-            >>> print(f"Data shape: {power_data.shape}")
-            >>> print(f"Average power: {power_data['power_output'].mean():.2f} kW")
-            Data shape: (288, 2)
-            Average power: 127.45 kW
-            
-            >>> # Dictionary results for JSON APIs
-            >>> device_summary = db.query(
-            ...     "SELECT name, device_type, rated_power FROM wec_devices",
-            ...     return_type="dict"
-            ... )
-            >>> import json
-            >>> print(json.dumps(device_summary[0], indent=2))
-            {
-              "name": "WEC-001",
-              "device_type": "RM3",
-              "rated_power": 150.0
-            }
-
-        Advanced Query Patterns:
-            **Time series aggregation**:
-            ```python
-            monthly_power = db.query('''
-                SELECT 
-                    strftime('%Y-%m', timestamp) as month,
-                    AVG(power_output) as avg_power,
-                    SUM(power_output) as total_power,
-                    COUNT(*) as data_points
-                FROM timeseries_data 
-                WHERE simulation_id = ?
-                GROUP BY strftime('%Y-%m', timestamp)
-                ORDER BY month
-            ''', params=(sim_id,), return_type="df")
-            ```
-            
-            **Device performance comparison**:
-            ```python
-            device_stats = db.query('''
-                SELECT 
-                    d.name,
-                    d.rated_power,
-                    AVG(t.power_output) as avg_output,
-                    MAX(t.power_output) as peak_output,
-                    AVG(t.power_output) / d.rated_power as capacity_factor
-                FROM wec_devices d
-                JOIN timeseries_data t ON d.id = t.device_id
-                WHERE t.simulation_id = ?
-                GROUP BY d.id, d.name, d.rated_power
-                ORDER BY capacity_factor DESC
-            ''', params=(sim_id,), return_type="df")
-            ```
-            
-            **Complex temporal analysis**:
-            ```python
-            peak_hours = db.query('''
-                SELECT 
-                    strftime('%H', timestamp) as hour,
-                    AVG(power_output) as avg_power,
-                    PERCENTILE_90(power_output) as p90_power
-                FROM timeseries_data
-                WHERE simulation_id = ?
-                GROUP BY strftime('%H', timestamp)
-                ORDER BY avg_power DESC
-            ''', params=(sim_id,), return_type="df")
-            ```
-
-        Performance Considerations:
-            **Query optimization**:
-            - Use indexes for WHERE clauses on timestamp, simulation_id, device_id
-            - LIMIT large result sets to avoid memory issues
-            - Use aggregate functions (SUM, AVG, COUNT) for summarization
-            - Consider views for frequently repeated complex queries
-            
-            **Return type performance**:
-            - "raw": Fastest, minimal memory overhead
-            - "df": Moderate overhead, optimal for analysis
-            - "dict": Highest overhead, good for APIs and serialization
-            
-            **Parameter binding benefits**:
-            - SQL injection prevention through proper escaping
-            - Query plan caching for repeated queries with different parameters
-            - Type safety and automatic conversion
-            
-        Memory Management:
-            **Large result sets**:
-            ```python
-            # Stream large datasets to avoid memory issues
-            with db.connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(sql, params or ())
-                while True:
-                    batch = cursor.fetchmany(1000)  # Process in batches
-                    if not batch:
-                        break
-                    # Process batch
-            ```
-            
-        Error Handling:
-            **Common error patterns**:
-            ```python
-            try:
-                results = db.query(sql, params, return_type="df")
-            except sqlite3.IntegrityError:
-                # Handle constraint violations
-                pass
-            except sqlite3.OperationalError as e:
-                if "no such table" in str(e):
-                    # Handle missing tables
-                    db.initialize_db()
-                    results = db.query(sql, params, return_type="df")
-            except ValueError as e:
-                # Handle invalid return_type
-                print(f"Invalid return type: {e}")
-            ```
-            
-        Data Type Handling:
-            **SQLite to Python type mapping**:
-            - INTEGER → int
-            - REAL → float  
-            - TEXT → str
-            - TIMESTAMP → str (use pd.to_datetime() for conversion)
-            - NULL → None
-            
-            **DataFrame type inference**:
-            ```python
-            # Automatic type conversion in pandas
-            df = db.query("SELECT * FROM timeseries_data", return_type="df")
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df['power_output'] = pd.to_numeric(df['power_output'])
-            ```
-
-        Notes:
-            - All queries executed within automatic transaction management
-            - Parameter binding prevents SQL injection attacks
-            - Column names preserved in DataFrame and dictionary results
-            - Large result sets may require streaming for memory efficiency
-            - Query execution time depends on indexes and result set size
-            
-        See Also:
-            connection: Context manager used for query execution
-            initialize_db: Database schema setup for query targets
+            >>> db.query("SELECT * FROM grid_simulations WHERE case_name = ?", 
+            ...           params=("IEEE_14_bus",), return_type="df")
         """
         with self.connection() as conn:
             cursor = conn.cursor()
@@ -548,3 +491,410 @@ class WECGridDB:
                 return result
             else:
                 raise ValueError(f"Invalid return_type '{return_type}'. Must be 'raw', 'df', or 'dict'.")
+                
+    def save_sim(self, sim_name: str, notes: str = None) -> int:
+        """Save simulation data for all available software backends in the engine.
+        
+        Automatically detects and stores data from all active software backends
+        (PSS®E, PyPSA) and WEC farms present in the engine object.
+        
+        Args:
+            sim_name (str): User-friendly simulation name.
+            notes (str, optional): Simulation notes.
+            
+        Returns:
+            int: grid_sim_id of the created simulation.
+            
+        Example:
+            >>> sim_id = engine.database.save_sim(
+            ...     sim_name="IEEE 30 test",
+            ...     notes="testing the database"
+            ... )
+        """
+        # Gather all available software objects from engine
+        softwares = []
+        
+        # Check for PSS®E
+        if hasattr(self.engine, 'psse') and hasattr(self.engine.psse, 'grid'):
+            softwares.append(self.engine.psse.grid)
+            print(f"Found PSS®E grid data")
+        
+        # Check for PyPSA  
+        if hasattr(self.engine, 'pypsa') and hasattr(self.engine.pypsa, 'grid'):
+            softwares.append(self.engine.pypsa.grid)
+            print(f"Found PyPSA grid data")
+        
+        if not softwares:
+            raise ValueError("No software backends found in engine. Ensure PSS®E or PyPSA models are loaded.")
+        
+        # Get case name from engine
+        case_name = getattr(self.engine, 'case_name', 'Unknown_Case')
+        
+        # Get time manager from engine
+        timeManager = getattr(self.engine, 'time', None)
+        if timeManager is None:
+            raise ValueError("No time manager found in engine. Ensure engine.time is properly initialized.")
+        
+        # Extract software flags and determine sbase
+        psse_used = False
+        pypsa_used = False
+        sbase_mva = None
+        
+        print(f"Processing {len(softwares)} software objects...")
+        
+        for i, software_obj in enumerate(softwares):
+            software_name = getattr(software_obj, 'software', '')
+            print(f"  Software {i+1}: '{software_name}' (type: {type(software_obj)})")
+            
+            # Debug: Check if software attribute exists but is None or empty
+            if hasattr(software_obj, 'software'):
+                raw_software = software_obj.software
+                print(f"    Raw software attribute: {repr(raw_software)}")
+            else:
+                print(f"    No 'software' attribute found")
+            
+            software_name = software_name.lower() if software_name else ''
+            
+            if software_name == "psse":
+                psse_used = True
+            elif software_name == "pypsa":
+                pypsa_used = True
+            else:
+                print(f"  Warning: Unknown or missing software '{software_name}' - skipping this object")
+                continue  # Skip this software object instead of processing it
+            
+            # Get sbase from the first software object
+            if sbase_mva is None:
+                if hasattr(software_obj, 'sbase'):
+                    sbase_mva = software_obj.sbase
+                    print(f"  Found sbase: {sbase_mva} MVA")
+                else:
+                    # Try to get from parent object  
+                    parent = getattr(software_obj, '_parent', None)
+                    if parent and hasattr(parent, 'sbase'):
+                        sbase_mva = parent.sbase
+                        print(f"  Found sbase from parent: {sbase_mva} MVA")
+                    else:
+                        sbase_mva = 100.0  # Default fallback
+                        print(f"  Using default sbase: {sbase_mva} MVA")
+        
+        # Get time information
+        sim_start_time = timeManager.start_time.isoformat()
+        sim_end_time = getattr(timeManager, 'sim_stop', None)
+        if sim_end_time:
+            sim_end_time = sim_end_time.isoformat()
+        delta_time = timeManager.delta_time
+        
+        # Create grid simulation record (handle duplicates)
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            
+            # Check if simulation already exists
+            cursor.execute("""
+                SELECT grid_sim_id FROM grid_simulations 
+                WHERE case_name = ? AND psse = ? AND pypsa = ? AND sim_start_time = ?
+            """, (case_name, psse_used, pypsa_used, sim_start_time))
+            
+            existing_sim = cursor.fetchone()
+            if existing_sim:
+                print(f"Warning: Simulation already exists with ID {existing_sim[0]}. Updating notes and returning existing ID.")
+                # Update the notes for the existing simulation
+                cursor.execute("""
+                    UPDATE grid_simulations 
+                    SET sim_name = ?, notes = ?, created_at = CURRENT_TIMESTAMP
+                    WHERE grid_sim_id = ?
+                """, (sim_name, notes, existing_sim[0]))
+                grid_sim_id = existing_sim[0]
+            else:
+                # Insert new simulation
+                cursor.execute("""
+                    INSERT INTO grid_simulations 
+                    (sim_name, case_name, psse, pypsa, sbase_mva, sim_start_time, 
+                     sim_end_time, delta_time, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (sim_name, case_name, psse_used, pypsa_used, sbase_mva, sim_start_time,
+                      sim_end_time, delta_time, notes))
+                
+                grid_sim_id = cursor.lastrowid
+        
+        # Store data for each valid software
+        valid_softwares = []
+        for software_obj in softwares:
+            software_name = getattr(software_obj, 'software', '').lower()
+            
+            # Only process valid software names
+            if software_name in ['psse', 'pypsa']:
+                valid_softwares.append((software_obj, software_name))
+            else:
+                print(f"Skipping invalid software object: {software_name}")
+        
+        for software_obj, software_name in valid_softwares:
+            print(f"Storing time-series data for {software_name.upper()}...")
+            
+            # Store all time-series data from GridState
+            self._store_all_gridstate_timeseries(grid_sim_id, software_obj, software_name, timeManager)
+        
+        # Store WEC farm data if available
+        if hasattr(self.engine, 'wec_farm') and self.engine.wec_farm is not None:
+            print("Storing WEC farm data...")
+            self._store_wec_farm_data(grid_sim_id)
+        
+        # Create summary of used software
+        used_software = []
+        if psse_used:
+            used_software.append("PSS®E")
+        if pypsa_used:
+            used_software.append("PyPSA")
+        
+        print(f"Simulation saved with ID: {grid_sim_id}")
+        print(f"Software backends: {', '.join(used_software)}")
+        print(f"Case: {case_name}")
+        print(f"Time series data stored for {len(softwares)} software(s)")
+        
+        return grid_sim_id
+        
+    def _store_all_gridstate_timeseries(self, grid_sim_id: int, grid_state_obj, software: str, timeManager):
+        """Store all time-series data from GridState object.
+        
+        Args:
+            grid_sim_id (int): Grid simulation ID.
+            grid_state_obj: GridState object with time-series data.
+            software (str): Software name ("psse" or "pypsa").
+            timeManager: WECGridTimeManager object.
+        """
+        # Validate software name
+        if software not in ['psse', 'pypsa']:
+            raise ValueError(f"Invalid software name: '{software}'. Must be 'psse' or 'pypsa'.")
+            
+        table_prefix = f"{software}_"
+        snapshots = timeManager.snapshots
+        
+        print(f"  Storing data to {table_prefix}* tables...")
+        
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            
+            # Store bus time-series data
+            if hasattr(grid_state_obj, 'bus_t') and grid_state_obj.bus_t:
+                for timestamp in snapshots:
+                    timestamp_str = timestamp.isoformat()
+                    
+                    # Create bus data for this timestamp
+                    if hasattr(grid_state_obj, 'bus') and not grid_state_obj.bus.empty:
+                        for bus_id, row in grid_state_obj.bus.iterrows():
+                            cursor.execute(f"""
+                                INSERT OR REPLACE INTO {table_prefix}bus_results 
+                                (grid_sim_id, timestamp, bus, bus_name, type, p, q, v_mag, angle_deg, vbase)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (grid_sim_id, timestamp_str, bus_id, row.get('bus_name'), row.get('type'),
+                                  self._get_timeseries_value(grid_state_obj.bus_t, 'p', bus_id, timestamp),
+                                  self._get_timeseries_value(grid_state_obj.bus_t, 'q', bus_id, timestamp),
+                                  self._get_timeseries_value(grid_state_obj.bus_t, 'v_mag', bus_id, timestamp),
+                                  self._get_timeseries_value(grid_state_obj.bus_t, 'angle_deg', bus_id, timestamp),
+                                  row.get('Vbase')))
+            
+            # Store generator time-series data
+            if hasattr(grid_state_obj, 'gen_t') and grid_state_obj.gen_t:
+                for timestamp in snapshots:
+                    timestamp_str = timestamp.isoformat()
+                    
+                    if hasattr(grid_state_obj, 'gen') and not grid_state_obj.gen.empty:
+                        for gen_id, row in grid_state_obj.gen.iterrows():
+                            cursor.execute(f"""
+                                INSERT OR REPLACE INTO {table_prefix}generator_results 
+                                (grid_sim_id, timestamp, gen, gen_name, bus, p, q, mbase, status)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (grid_sim_id, timestamp_str, gen_id, row.get('gen_name'), row.get('bus'),
+                                  self._get_timeseries_value(grid_state_obj.gen_t, 'p', gen_id, timestamp),
+                                  self._get_timeseries_value(grid_state_obj.gen_t, 'q', gen_id, timestamp),
+                                  row.get('Mbase'),
+                                  self._get_timeseries_value(grid_state_obj.gen_t, 'status', gen_id, timestamp)))
+            
+            # Store load time-series data
+            if hasattr(grid_state_obj, 'load_t') and grid_state_obj.load_t:
+                for timestamp in snapshots:
+                    timestamp_str = timestamp.isoformat()
+                    
+                    if hasattr(grid_state_obj, 'load') and not grid_state_obj.load.empty:
+                        for load_id, row in grid_state_obj.load.iterrows():
+                            cursor.execute(f"""
+                                INSERT OR REPLACE INTO {table_prefix}load_results 
+                                (grid_sim_id, timestamp, load, load_name, bus, p, q, status)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (grid_sim_id, timestamp_str, load_id, row.get('load_name'), row.get('bus'),
+                                  self._get_timeseries_value(grid_state_obj.load_t, 'p', load_id, timestamp),
+                                  self._get_timeseries_value(grid_state_obj.load_t, 'q', load_id, timestamp),
+                                  self._get_timeseries_value(grid_state_obj.load_t, 'status', load_id, timestamp)))
+            
+            # Store line time-series data
+            if hasattr(grid_state_obj, 'line_t') and grid_state_obj.line_t:
+                for timestamp in snapshots:
+                    timestamp_str = timestamp.isoformat()
+                    
+                    if hasattr(grid_state_obj, 'line') and not grid_state_obj.line.empty:
+                        for line_id, row in grid_state_obj.line.iterrows():
+                            cursor.execute(f"""
+                                INSERT OR REPLACE INTO {table_prefix}line_results 
+                                (grid_sim_id, timestamp, line, line_name, ibus, jbus, line_pct, status)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (grid_sim_id, timestamp_str, line_id, row.get('line_name'), row.get('ibus'),
+                                  row.get('jbus'),
+                                  self._get_timeseries_value(grid_state_obj.line_t, 'line_pct', line_id, timestamp),
+                                  self._get_timeseries_value(grid_state_obj.line_t, 'status', line_id, timestamp)))
+                                  
+    def _store_wec_farm_data(self, grid_sim_id: int):
+        """Store WEC farm data if available in the engine.
+        
+        Args:
+            grid_sim_id (int): Grid simulation ID to link WEC data to.
+        """
+        wec_farm = self.engine.wec_farm
+        
+        # For now, just log that WEC farm data was found
+        # TODO: Implement actual WEC data storage when WEC integration is complete
+        print(f"  Found WEC farm: {type(wec_farm)}")
+        print(f"  WEC farm storage not yet implemented - placeholder for future development")
+        
+        # Future implementation would:
+        # 1. Create wec_simulations record
+        # 2. Create wec_integrations record linking to grid_sim_id  
+        # 3. Store wec_power_results time-series data)
+                                  
+    def _get_timeseries_value(self, timeseries_dict, parameter: str, component_id: int, timestamp):
+        """Extract time-series value for specific component and timestamp.
+        
+        Args:
+            timeseries_dict: AttrDict containing time-series DataFrames.
+            parameter (str): Parameter name (e.g., 'p', 'q', 'v_mag').
+            component_id (int): Component ID.
+            timestamp: Timestamp to extract.
+            
+        Returns:
+            Value at the specified timestamp or None if not available.
+        """
+        try:
+            if parameter in timeseries_dict:
+                df = timeseries_dict[parameter]
+                if component_id in df.columns and timestamp in df.index:
+                    return df.loc[timestamp, component_id]
+        except (KeyError, AttributeError):
+            pass
+        return None
+            
+    def store_gridstate_data(self, grid_sim_id: int, timestamp: str, grid_state, software: str):
+        """Store GridState data to appropriate software-specific tables.
+        
+        Args:
+            grid_sim_id (int): Grid simulation ID.
+            timestamp (str): ISO datetime string for this snapshot.
+            grid_state: GridState object with bus, gen, load, line DataFrames.
+            software (str): Software backend - "PSSE" or "PyPSA".
+            
+        Example:
+            >>> db.store_gridstate_data(
+            ...     grid_sim_id=123,
+            ...     timestamp="2025-08-14T10:05:00", 
+            ...     grid_state=my_grid_state,
+            ...     software="PSSE"
+            ... )
+        """
+        software = software.lower()
+        table_prefix = f"{software}_"
+        
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            
+            # Store bus results
+            if not grid_state.bus.empty:
+                for bus_id, row in grid_state.bus.iterrows():
+                    cursor.execute(f"""
+                        INSERT OR REPLACE INTO {table_prefix}bus_results 
+                        (grid_sim_id, timestamp, bus, bus_name, type, p, q, v_mag, angle_deg, vbase)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (grid_sim_id, timestamp, bus_id, row.get('bus_name'), row.get('type'),
+                          row.get('p'), row.get('q'), row.get('v_mag'), row.get('angle_deg'), row.get('Vbase')))
+            
+            # Store generator results
+            if not grid_state.gen.empty:
+                for gen_id, row in grid_state.gen.iterrows():
+                    cursor.execute(f"""
+                        INSERT OR REPLACE INTO {table_prefix}generator_results 
+                        (grid_sim_id, timestamp, gen, gen_name, bus, p, q, mbase, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (grid_sim_id, timestamp, gen_id, row.get('gen_name'), row.get('bus'),
+                          row.get('p'), row.get('q'), row.get('Mbase'), row.get('status')))
+            
+            # Store load results
+            if not grid_state.load.empty:
+                for load_id, row in grid_state.load.iterrows():
+                    cursor.execute(f"""
+                        INSERT OR REPLACE INTO {table_prefix}load_results 
+                        (grid_sim_id, timestamp, load, load_name, bus, p, q, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (grid_sim_id, timestamp, load_id, row.get('load_name'), row.get('bus'),
+                          row.get('p'), row.get('q'), row.get('status')))
+            
+            # Store line results
+            if not grid_state.line.empty:
+                for line_id, row in grid_state.line.iterrows():
+                    cursor.execute(f"""
+                        INSERT OR REPLACE INTO {table_prefix}line_results 
+                        (grid_sim_id, timestamp, line, line_name, ibus, jbus, line_pct, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (grid_sim_id, timestamp, line_id, row.get('line_name'), row.get('ibus'),
+                          row.get('jbus'), row.get('line_pct'), row.get('status')))
+                          
+    def get_simulation_info(self, grid_sim_id: int = None) -> pd.DataFrame:
+        """Get grid simulation information.
+        
+        Args:
+            grid_sim_id (int, optional): Specific simulation ID. If None, returns all.
+            
+        Returns:
+            pd.DataFrame: Simulation metadata.
+        """
+        if grid_sim_id:
+            return self.query(
+                "SELECT * FROM grid_simulations WHERE grid_sim_id = ?",
+                params=(grid_sim_id,), return_type="df"
+            )
+        else:
+            return self.query("SELECT * FROM grid_simulations ORDER BY created_at DESC", return_type="df")
+            
+    def grid_sims(self) -> pd.DataFrame:
+        """Get all grid simulation metadata in a user-friendly format.
+        
+        Returns:
+            pd.DataFrame: Grid simulations with key metadata columns.
+            
+        Example:
+            >>> engine.database.grid_sims()
+               grid_sim_id     sim_name      case_name  psse  pypsa  sbase_mva  ...
+            0           1     Test Run   IEEE_14_bus  True  False      100.0  ...
+        """
+        return self.query("""
+            SELECT grid_sim_id, sim_name, case_name, psse, pypsa, sbase_mva,
+                   sim_start_time, sim_end_time, delta_time, notes, created_at
+            FROM grid_simulations 
+            ORDER BY created_at DESC
+        """, return_type="df")
+        
+    def wecsim_runs(self) -> pd.DataFrame:
+        """Get all WEC simulation metadata with enhanced wave parameters.
+        
+        Returns:
+            pd.DataFrame: WEC simulations with parameters and wave conditions including
+                wave spectrum type, wave class, and all simulation parameters.
+            
+        Example:
+            >>> engine.database.wecsim_runs()
+               wec_sim_id model_type  sim_duration_sec  delta_time  wave_spectrum  wave_class  ...
+            0          1       RM3             600.0        0.1             PM   irregular  ...
+        """
+        return self.query("""
+            SELECT wec_sim_id, model_type, sim_duration_sec, delta_time,
+                   wave_height_m, wave_period_sec, wave_spectrum, wave_class, wave_seed,
+                   simulation_hash, created_at
+            FROM wec_simulations 
+            ORDER BY created_at DESC
+        """, return_type="df")

@@ -82,6 +82,7 @@ class PSSEModeler(PowerSystemModeler):
             Call init_api() after construction to initialize PSS®E API.
         """
         super().__init__(engine)
+        self.grid.software = "psse"
 
     def __repr__(self) -> str:
         """String representation of PSS®E model with grid summary.
@@ -240,6 +241,7 @@ class PSSEModeler(PowerSystemModeler):
             if ierr > 0:
                 print(f"[WARN] Failed to update Q limits at bus {bus_num}.")
         self.grid = GridState()  # TODO Reset state after adding farm but should be a bette way
+        self.grid.software = "psse"
         self.solve_powerflow()
         self.take_snapshot(timestamp=self.engine.time.start_time)
         return True
@@ -332,6 +334,7 @@ class PSSEModeler(PowerSystemModeler):
             return False
 
         self.grid = GridState()  # TODO: Reset state after adding farm, but should be a better way
+        self.grid.software = "psse"
         self.solve_powerflow()
         self.take_snapshot(timestamp=self.engine.time.start_time)
         return True
@@ -419,7 +422,7 @@ class PSSEModeler(PowerSystemModeler):
         
         Returns:
             pd.DataFrame: DataFrame with columns: bus, bus_name, type, p, q, v_mag, 
-                angle_deg, base. Index represents individual buses.
+                angle_deg, Vbase.
                 
         Raises:
             RuntimeError: If there is an error retrieving bus snapshot data from PSS®E.
@@ -431,9 +434,9 @@ class PSSEModeler(PowerSystemModeler):
             - ``abuschar()``: Bus names ('NAME')
                 Returns: Bus names [string]
             - ``abusint()``: Bus numbers and types ('NUMBER', 'TYPE')  
-                Returns: Bus numbers [dimensionless], Bus types [dimensionless]
+                Returns: Bus numbers, Bus types 3,2,1
             - ``abusreal()``: Bus voltages and base kV ('PU', 'ANGLED', 'BASE')
-                Returns: Voltage magnitude [pu], Voltage angle [degrees], Base voltage [kV]
+                Returns: Acutal Voltage magnitude [pu], Voltage angle [degrees], Base voltage [kV]
             
             Generator Data:
             - ``amachint()``: Generator bus numbers ('NUMBER')
@@ -463,7 +466,7 @@ class PSSEModeler(PowerSystemModeler):
 
         # --- Unpack ---
         bus_numbers, bus_types = ints
-        v_mag, angle_deg, base_kv = reals  # base_kv is kV (NOT for p.u. power!)
+        v_mag, angle_deg, base_kv = reals  # base_kv is kV, v_mag is in pu
         gen_bus_ids = gens[0]
         pgen_mw     = pgen[0]
         qgen_mvar   = qgen[0]
@@ -489,7 +492,7 @@ class PSSEModeler(PowerSystemModeler):
         rows = []
         for i in range(len(bus_numbers)):
             bus = bus_numbers[i]
-            name = names[0][i].strip()
+            name = f"Bus_{bus}"
             pgen_b, qgen_b = gen_map[bus]
             pload_b, qload_b = load_map[bus]
 
@@ -498,18 +501,19 @@ class PSSEModeler(PowerSystemModeler):
             q_pu = (qgen_b - qload_b) / self.sbase
 
             rows.append({
-                "bus":       bus, # todo figure out int of str
-                "bus_name":  name,
+                "bus":       bus, # int 
+                "bus_name":  name, 
                 "type":      type_map.get(bus_types[i], f"Unknown({bus_types[i]})"),
                 "p":         p_pu,
                 "q":         q_pu,
                 "v_mag":     v_mag[i],          # already pu
                 "angle_deg": angle_deg[i],      # PSSE returns degrees
-                "base":      base_kv[i],        # kV (for info/consistency with PyPSA)
+                "Vbase":      base_kv[i], 
             })
 
         df = pd.DataFrame(rows)
         df.attrs["df_type"] = "BUS"
+        df.index = pd.RangeIndex(start=0, stop=len(df))
         return df
 
     def snapshot_generators(self) -> pd.DataFrame:
@@ -520,8 +524,7 @@ class PSSEModeler(PowerSystemModeler):
         and status information.
         
         Returns:
-            pd.DataFrame: DataFrame with columns: gen, bus, p, q, base, status.
-                Generator names are formatted as "bus_count" (e.g., "1_1", "1_2").
+            pd.DataFrame: DataFrame with columns: gen, gen_name, bus, p, q, Mbase, status.
                 
         Raises:
             RuntimeError: If there is an error retrieving generator data from PSS®E.
@@ -532,7 +535,7 @@ class PSSEModeler(PowerSystemModeler):
             - ``amachint()``: Generator bus numbers and status ('NUMBER', 'STATUS')
                 Returns: Bus numbers [dimensionless], Status codes [dimensionless]
             - ``amachreal()``: Generator power and base MVA ('PGEN', 'QGEN', 'MBASE')
-                Returns: Active power [MW], Reactive power [MVAr], Base MVA [MVA]
+                Returns: Active power [MW], Reactive power [MVAr], MBase MVA [MVA]
         """
         
         ierr1, int_arr  = self.psspy.amachint(string=["NUMBER", "STATUS"])
@@ -544,25 +547,20 @@ class PSSEModeler(PowerSystemModeler):
         pgen_mw, qgen_mvar, mbases = real_arr
 
         rows = []
-        counter = defaultdict(int)
-
         for i, bus in enumerate(bus_ids):
-            gen_count = counter[bus]
-            counter[bus] += 1
-            gen_key = f"{bus}_{gen_count+1}"  # always bus number + count
-
-            base = mbases[i] or 100.0
             rows.append({
-                "gen":    gen_key,
+                "gen":    i+1,
+                "gen_name": f"Gen_{i+1}",
                 "bus":    bus,
-                "p":      pgen_mw[i] / base,
-                "q":      qgen_mvar[i] / base,
-                "base":   base,
+                "p":      pgen_mw[i] / self.sbase,
+                "q":      qgen_mvar[i] / self.sbase,
+                "Mbase":   mbases[i],
                 "status": statuses[i],
             })
 
         df = pd.DataFrame(rows)
         df.attrs["df_type"] = "GEN"
+        df.index = pd.RangeIndex(start=0, stop=len(df))
         return df
        
     def snapshot_lines(self) -> pd.DataFrame:
@@ -573,7 +571,7 @@ class PSSEModeler(PowerSystemModeler):
         and connection information.
         
         Returns:
-            pd.DataFrame: DataFrame with columns: line, ibus, jbus, line_pct, status.
+            pd.DataFrame: DataFrame with columns: line, line_name, ibus, jbus, line_pct, status.
                 Line names are formatted as "Line_ibus_jbus_count".
                 
         Raises:
@@ -587,7 +585,7 @@ class PSSEModeler(PowerSystemModeler):
             - ``abrnint()``: Line bus connections and status ('FROMNUMBER', 'TONUMBER', 'STATUS')
                 Returns: From bus [dimensionless], To bus [dimensionless], Status [dimensionless]
             - ``abrnreal()``: Line loading percentage ('PCTRATE')
-                Returns: Line loading [%]
+                Returns: Line loading [%] "Percent from bus current of default rating set"
         """
 
         ierr1, carray = self.psspy.abrnchar(string=["ID"])
@@ -603,18 +601,14 @@ class PSSEModeler(PowerSystemModeler):
             raise RuntimeError("Error fetching line data from PSSE.")
 
         rows = []
-        counter = defaultdict(int)
 
         for i in range(len(ibuses)):
             ibus = ibuses[i]
             jbus = jbuses[i]
-            counter[(ibus, jbus)] += 1
-            idx = counter[(ibus, jbus)]  # starts at 1 now
-
-            line_id = f"Line_{ibus}_{jbus}_{idx}"
 
             rows.append({
-                "line": line_id,
+                "line": i+1,
+                "line_name": f"Line_{i+1}",
                 "ibus": ibus,
                 "jbus": jbus,
                 "line_pct": pctrates[i],
@@ -623,7 +617,7 @@ class PSSEModeler(PowerSystemModeler):
 
         df = pd.DataFrame(rows)
         df.attrs["df_type"] = "LINE"
-        df.index = pd.RangeIndex(start=0, stop=len(df))  # clean index
+        df.index = pd.RangeIndex(start=0, stop=len(df))
         return df
 
     def snapshot_loads(self) -> pd.DataFrame:
@@ -666,18 +660,13 @@ class PSSEModeler(PowerSystemModeler):
             raise RuntimeError("Error retrieving load snapshot data from PSSE.")
 
         rows = []
-        counter = defaultdict(int)
         for i in range(len(bus_numbers)):
-            bus = bus_numbers[i]
-            counter[bus] += 1
-            idx = counter[bus]  # starts at 1 now
-
             rows.append({
-                "load":   f"Load_{bus}_{idx}",
-                "bus":    bus,
+                "load":   i+1,
+                "load_name": f"Load_{i+1}",
+                "bus":    bus_numbers[i],
                 "p":      total_act[i].real / self.sbase,  # Convert MW to pu
                 "q":      total_act[i].imag / self.sbase,  # Convert MVAR to pu
-                "base":   self.sbase,
                 "status": statuses[i],
             })
 

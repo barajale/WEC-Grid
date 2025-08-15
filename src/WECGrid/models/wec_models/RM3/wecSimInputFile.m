@@ -1,28 +1,24 @@
 %% Simulation Data
 simu = simulationClass();        
-simu.simMechanicsFile = 'W2G_ss_RM3.slx';      %Location of Simulink Model File with PTO-Sim  
+simu.simMechanicsFile = 'W2G_ss_RM3.slx';%Location of Simulink Model File with PTO-Sim  
 simu.explorer = 'off';                  % Turn SimMechanics Explorer (on/off)
 simu.mode = 'normal';                   % Specify Simulation Mode ('normal','accelerator','rapid-accelerator')
 simu.startTime = 0;                     % Simulation Start Time [s]
 simu.rampTime = 0;                      % Wave Ramp Time [s]
 simu.endTime = simLength;                     % Simulation End Time [s]
-simu.solver = 'ode4';                   % simu.solver = 'ode4' for fixed step & simu.solver = 'ode45' for variable step 
-simu.dt = 0.1; 	
+simu.solver = 'ode4';    % simu.solver = 'ode4' for fixed step & simu.solver = 'ode45' for variable step 
+simu.dt = dt; 	
 
 %% Wave Information
-% Regular Waves  
-% waves = waveClass('regular');            
-% waves.height = 2.5;                          
-% waves.period = 8;  
-
-%Irregular Waves using PM Spectrum
-%waves = waveClass('elevationImport');
-waves = waveClass('irregular');
+%waves = waveClass('irregular');
+waves = waveClass(waveClassType);
 %waves.elevationFile = 'GeneratedEtaCorrected.mat';
 waves.height = waveHeight;
 waves.period = wavePeriod;
-waves.spectrumType = 'PM';
+%aves.spectrumType = 'PM';
+waves.spectrumType = spectrumType;
 waves.phaseSeed = waveSeed;
+
 
 %The equal energy formulation speeds up the irregular wave simulation time
 % by reducing the number of frequencies the wave train is defined by,

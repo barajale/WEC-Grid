@@ -7,6 +7,8 @@ wave energy converter simulations using MATLAB engine integration.
 
 import os
 import random
+import json
+import io
 
 import matlab.engine
 import matplotlib.pyplot as plt
@@ -18,6 +20,10 @@ from wecgrid.util.resources import resolve_wec_model
 
 # Inside wecsim_runner.py (at the top)
 from dataclasses import dataclass
+
+# Configuration file path
+_CURR_DIR = os.path.dirname(os.path.abspath(__file__))
+_CONFIG_FILE = os.path.join(_CURR_DIR, "wecsim_config.json")
 
 
 class WECSimRunner:
@@ -35,10 +41,12 @@ class WECSimRunner:
     Example:
         >>> runner = WECSimRunner(database)
         >>> runner.set_wec_sim_path("/path/to/WEC-Sim")
-        >>> success = runner(
-        ...     sim_id=101,
+        >>> wec_sim_id = runner(
         ...     model="RM3",
-        ...     sim_length_secs=3600,
+        ...     sim_length=3600,
+        ...     dt=0.1,
+        ...     spectrum_type="PM", 
+        ...     wave_class="irregular",
         ...     wave_height=2.5,
         ...     wave_period=8.0
         ... )
@@ -46,7 +54,7 @@ class WECSimRunner:
     Notes:
         - Requires MATLAB license and WEC-Sim installation
         - MATLAB engine startup takes 30-60 seconds
-        - Results stored in database tables: WECSIM_{model}_{sim_id}
+        - Results stored in new wec_simulations and wec_power_results tables
         - Supports WEC models in src/wecgrid/models/wec_models
         
     TODO:
@@ -62,33 +70,88 @@ class WECSimRunner:
                 
         Notes:
             - MATLAB engine initialized on first simulation call
-            - WEC-Sim path must be set before running simulations
+            - WEC-Sim path loaded from config file if available
         """
         self.wec_sim_path: Optional[str] = None
         self.database: WECGridDB = database
         self.matlab_engine: Optional[matlab.engine.MatlabEngine] = None
+        
+        # Try to load WEC-Sim path from config file
+        self._load_config()
+    
+    def _load_config(self) -> None:
+        """Load WEC-Sim configuration from JSON file."""
+        try:
+            if os.path.exists(_CONFIG_FILE):
+                with open(_CONFIG_FILE, 'r') as f:
+                    config = json.load(f)
+                    self.wec_sim_path = config.get('wec_sim_path')
+                    if self.wec_sim_path:
+                        #print(f"Loaded WEC-Sim path from config: {self.wec_sim_path}")
+                        pass
+        except Exception as e:
+            print(f"Warning: Could not load WEC-Sim config: {e}")
+    
+    def _save_config(self) -> None:
+        """Save WEC-Sim configuration to JSON file."""
+        try:
+            config = {'wec_sim_path': self.wec_sim_path}
+            with open(_CONFIG_FILE, 'w') as f:
+                json.dump(config, f, indent=2)
+            print(f"Saved WEC-Sim configuration to: {_CONFIG_FILE}")
+        except Exception as e:
+            print(f"Warning: Could not save WEC-Sim config: {e}")
     
     def set_wec_sim_path(self, path: str) -> None:
         """Configure the WEC-Sim MATLAB framework installation path.
         
         Sets the path to the WEC-Sim MATLAB toolbox installation, which is required
         for running device-level wave energy converter simulations. The path is
-        validated to ensure the WEC-Sim framework is properly installed.
+        validated and automatically saved to configuration file for persistence.
         
         Args:
             path (str): Absolute path to WEC-Sim framework root directory.
                 Should contain WEC-Sim MATLAB functions and initialization files.
                 
         Returns:
-            None: Sets internal wec_sim_path attribute.
+            None: Sets internal wec_sim_path attribute and saves to config.
             
         Raises:
             FileNotFoundError: If specified path does not exist.
+            
+        Example:
+            >>> runner.set_wec_sim_path(r"C:\path\to\WEC-Sim")
+            Saved WEC-Sim configuration to: wecsim_config.json
 
         """
-        self.wec_sim_path = path
         if not os.path.exists(path):
             raise FileNotFoundError(f"WEC-SIM path does not exist: {path}")
+            
+        self.wec_sim_path = path
+        self._save_config()  # Automatically save to config file
+        
+    def get_wec_sim_path(self) -> Optional[str]:
+        """Get the currently configured WEC-Sim path.
+        
+        Returns:
+            str: Path to WEC-Sim installation if configured, None otherwise.
+            
+        Example:
+            >>> path = runner.get_wec_sim_path()
+            >>> print(f"WEC-Sim path: {path}")
+        """
+        return self.wec_sim_path
+        
+    def show_config(self) -> None:
+        """Display current WEC-Sim configuration.
+        
+        Shows the current WEC-Sim path and configuration file location.
+        Useful for troubleshooting configuration issues.
+        """
+        print(f"WEC-Sim Configuration:")
+        print(f"  Path: {self.wec_sim_path or 'Not configured'}")
+        print(f"  Config file: {_CONFIG_FILE}")
+        print(f"  Config exists: {os.path.exists(_CONFIG_FILE)}")
         
     def start_matlab(self) -> bool:
         """Initialize MATLAB engine and configure WEC-Sim framework paths.
@@ -148,8 +211,9 @@ class WECSimRunner:
             set_wec_sim_path: Configure WEC-Sim framework location
         """
         if self.matlab_engine is None:
-            print("Starting MATLAB engine...")
+            print(f"Starting MATLAB Engine... ", end='')
             self.matlab_engine = matlab.engine.start_matlab()
+            print("MATLAB engine started.")
 
             # Get and validate WEC-SIM path
             if self.wec_sim_path is None:
@@ -160,10 +224,13 @@ class WECSimRunner:
             
             if not os.path.exists(wec_sim_path):
                 raise FileNotFoundError(f"WEC-SIM path does not exist: {wec_sim_path}")
-
+            print(f"Adding WEC-SIM to path... ", end='')
             matlab_path = self.matlab_engine.genpath(str(wec_sim_path), nargout=1)
             self.matlab_engine.addpath(matlab_path, nargout=0)
-            print("MATLAB engine started and WEC-SIM path added...")
+            print("WEC-SIM path added.")
+            
+            self.out = io.StringIO()
+            self.err = io.StringIO()
             return True
         else:
             print("MATLAB engine is already running.")
@@ -217,57 +284,54 @@ class WECSimRunner:
             self.matlab_engine.quit()
             self.matlab_engine = None
             print("MATLAB engine stopped.")
+            self.out = None
+            self.err = None
             return True
         print("MATLAB engine is not running.")
         return False
 
-    def sim_results(self, df_full, df_ds, model, sim_id):
+    def sim_results(self, df_power, model, wec_sim_id):
         """Generate visualization plots for WEC-Sim simulation results.
         
         Creates a comprehensive plot showing WEC power output and wave conditions
-        from a completed WEC-Sim simulation. Displays both full-resolution and
-        downsampled data for validation and analysis purposes.
+        from a completed WEC-Sim simulation using the new database schema.
         
         Args:
-            df_full (pd.DataFrame): Full-resolution simulation results containing:
+            df_power (pd.DataFrame): Power and wave data with columns:
                 - time: Simulation time [s]
-                - p: Active power output [MW]
+                - p: Active power output [w] 
                 - eta: Wave surface elevation [m]
-            df_ds (pd.DataFrame): Downsampled simulation results for grid integration:
-                - time: Simulation time [s]  
-                - p: Active power output [MW]
             model (str): WEC device model name (e.g., "RM3", "LUPA").
-            sim_id (int): Unique simulation identifier.
+            wec_sim_id (int): Unique WEC simulation identifier from database.
             
         Returns:
             None: Displays plot using matplotlib.
             
         Plot Components:
-            - **Primary axis**: Active power output [MW] vs. time
+            - **Primary axis**: Active power output [w] vs. time
             - **Secondary axis**: Wave surface elevation [m] vs. time
-            - **Full resolution**: Gray line showing all simulation data points
-            - **Downsampled**: Red dotted line with markers for grid integration
+            - **Power output**: Red line showing WEC power generation
             - **Wave background**: Blue transparent line showing wave conditions
             
         Example:
             >>> # Automatic plotting after simulation
-            >>> runner(sim_id=101, model="RM3", ...)
+            >>> wec_sim_id = runner(model="RM3", ...)
             [Displays plot with power and wave data]
             
-            >>> # Manual plotting with custom data
-            >>> df_full = runner.database.query("SELECT * FROM WECSIM_rm3_101_full")
-            >>> df_ds = runner.database.query("SELECT * FROM WECSIM_rm3_101") 
-            >>> runner.sim_results(df_full, df_ds, "RM3", 101)
+            >>> # Manual plotting with power data
+            >>> power_data = engine.database.query(
+            ...     "SELECT time_sec as time, p_w as p, wave_elevation_m as eta "
+            ...     "FROM wec_power_results WHERE wec_sim_id = ?", 
+            ...     params=(wec_sim_id,), return_type="df")
+            >>> runner.sim_results(power_data, "RM3", wec_sim_id)
             
         Visualization Features:
             - **Dual y-axes**: Power (left) and wave elevation (right)
-            - **Data comparison**: Full vs. downsampled resolution overlay
             - **Legend integration**: Combined legends from both axes
             - **Professional formatting**: Publication-quality plot styling
             - **Context information**: Model and simulation ID in title
             
         Data Validation:
-            - Verifies downsampling accuracy by comparing trends
             - Shows correlation between wave conditions and power output
             - Identifies potential simulation issues or anomalies
             - Confirms data quality for grid integration studies
@@ -276,55 +340,56 @@ class WECSimRunner:
             - Called automatically after successful WEC-Sim simulations
             - Requires matplotlib for visualization
             - Plot helps validate simulation quality and data integrity
-            - Downsampled data used for power system integration
-            - Full resolution data available for detailed analysis
+            - Full resolution data from new database schema
             
         See Also:
             __call__: Main simulation method that generates this data
             WECGridDB.query: Database query method for retrieving results
         """
         
+        if df_power.empty:
+            print("No power data available for visualization")
+            return
+        
         # Plot
         fig, ax1 = plt.subplots(figsize=(10, 5))
 
-        # Secondary y-axis: Wave Height (m) — drawn first for background
+        # Secondary y-axis: Wave elevation (m) — drawn first for background
         ax2 = ax1.twinx()
-        ax2.set_ylabel("Wave Height (m)")
-        ax2.plot(
-            df_full["time"], df_full["eta"],
-            color="tab:blue", alpha=0.3, linewidth=1, label="Wave Height"
-        )
+        ax2.set_ylabel("Wave Elevation (m)")
+        if 'eta' in df_power.columns:
+            ax2.plot(
+                df_power["time"], df_power["eta"],
+                color="tab:blue", alpha=0.3, linewidth=1, label="Wave Elevation"
+            )
 
-        # Primary y-axis: Active power (MW)
+        # Primary y-axis: Active power W
         ax1.set_xlabel("Time (s)")
-        ax1.set_ylabel("Active Power (MW)")
-        ax1.plot(df_full["time"], df_full["p"], color="gray", label="P (full)", linewidth=1)
-        ax1.plot(
-            df_ds["time"], df_ds["p"],
-            linestyle=":", marker="o", color="tab:red", label="P (downsampled)"
-        )
+        ax1.set_ylabel("Active Power W")
+        ax1.plot(df_power["time"], df_power["p"], color="tab:red", label="Power Output", linewidth=1.5)
 
         # Title + layout
-        fig.suptitle(f"WEC-SIM Output — Model: {model}, Sim ID: {sim_id}")
+        fig.suptitle(f"WEC-SIM Output — Model: {model}, WEC Sim ID: {wec_sim_id}")
         fig.tight_layout()
 
         # Combine legends
         lines_1, labels_1 = ax1.get_legend_handles_labels()
         lines_2, labels_2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc="lower right")
+        ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc="upper right")
 
         plt.show()
             
     def __call__(
         self,
-        sim_id: int,
-        model: str,
-        sim_length_secs: int = 3600 * 24, # 24 hours
-        tsample: float = 300,
+        model: str = 'RM3',
+        sim_length: int = 3600 * 24, # 24 hours
+        delta_time: float = 0.1,
+        spectrum_type: str = 'PM',
+        wave_class: str = 'irregular',
         wave_height: float = 2.5,
         wave_period: float = 8.0,
         wave_seed: int = random.randint(1, 100),
-    ) -> bool:
+    ) -> Optional[int]:
         """Execute a complete WEC-Sim device simulation with specified parameters.
         
         Runs a high-fidelity wave energy converter simulation using the WEC-Sim MATLAB
@@ -332,15 +397,18 @@ class WECSimRunner:
         and stores data in the database for subsequent grid integration studies.
         
         Args:
-            sim_id (int): Unique identifier for this simulation run.
-                Used for database storage and result tracking.
-            model (str): WEC device model name. Supported models:
+            model (str, optional): WEC device model name. Defaults to "RM3".
+                Supported models:
                 - "RM3": Reference Model 3 (point absorber)
                 - "LUPA": LUPA device model
-            sim_length_secs (int, optional): Simulation duration in seconds.
+            sim_length (int, optional): Simulation duration in seconds.
                 Defaults to 86400 (24 hours).
-            tsample (float, optional): Output sampling interval in seconds.
-                Defaults to 300 (5 minutes) for grid integration compatibility.
+            dt (float, optional): Simulation time step in seconds.
+                Defaults to 0.1 for high-resolution WEC dynamics.
+            spectrum_type (str, optional): Wave spectrum type.
+                Defaults to 'PM' (Pierson-Moskowitz). Options: 'PM', 'JONSWAP', etc.
+            wave_class (str, optional): Wave type classification.
+                Defaults to 'irregular'. Options: 'irregular', 'regular', etc.
             wave_height (float, optional): Significant wave height in meters.
                 Defaults to 2.5m (moderate sea state).
             wave_period (float, optional): Peak wave period in seconds.
@@ -349,7 +417,7 @@ class WECSimRunner:
                 Defaults to random integer 1-100 for stochastic waves.
                 
         Returns:
-            bool: True if simulation completed successfully, False if errors occurred.
+            int: wec_sim_id from database if successful, None if failed.
             
         Raises:
             FileNotFoundError: If WEC model directory cannot be found.
@@ -357,24 +425,27 @@ class WECSimRunner:
             DatabaseError: If result storage to database fails.
             
         Example:
-            >>> # Standard 24-hour simulation
-            >>> success = runner(
-            ...     sim_id=101,
+            >>> # Standard 24-hour simulation with Pierson-Moskowitz spectrum
+            >>> wec_sim_id = runner(
             ...     model="RM3",
-            ...     sim_length_secs=86400,
+            ...     sim_length=86400,
+            ...     dt=0.1,
+            ...     spectrum_type="PM",
+            ...     wave_class="irregular",
             ...     wave_height=2.5,
             ...     wave_period=8.0
             ... )
             Starting WEC-SIM simulation...
             simulation complete... writing to database
-            WEC-SIM complete: model = RM3, ID = 101, duration = 86400s
-            >>> print(f"Simulation successful: {success}")
+            WEC-SIM complete: model = RM3, wec_sim_id = 42, duration = 86400s
+            >>> print(f"WEC simulation ID: {wec_sim_id}")
             
-            >>> # Short test simulation with calm conditions
-            >>> success = runner(
-            ...     sim_id=102, 
+            >>> # Short test simulation with JONSWAP spectrum
+            >>> wec_sim_id = runner(
             ...     model="RM3",
-            ...     sim_length_secs=3600,  # 1 hour
+            ...     sim_length=3600,       # 1 hour
+            ...     dt=0.05,               # Fine time step
+            ...     spectrum_type="JONSWAP",
             ...     wave_height=1.0,       # 1m waves
             ...     wave_period=6.0,       # 6s period
             ...     wave_seed=42           # Reproducible results
@@ -392,86 +463,127 @@ class WECSimRunner:
             9. **Cleanup**: Shutdown MATLAB engine
             
         Database Tables Created:
-            - `WECSIM_{model}_{sim_id}`: Downsampled data for grid integration
-                * time: Simulation time [s]
-                * p: Active power output [MW]
-                * q: Reactive power (typically zero) [MVAr]
-            - `WECSIM_{model}_{sim_id}_full`: Full-resolution simulation data
-                * time: Simulation time [s]
-                * p: Active power output [MW]
-                * eta: Wave surface elevation [m]
-                * Additional WEC-Sim output variables
+            - `wec_simulations`: WEC simulation metadata
+                * wec_sim_id: Unique simulation identifier
+                * model_type: WEC model name (e.g., "RM3", "LUPA")
+                * sim_duration_sec: Simulation duration [s]
+                * delta_time: Simulation time step [s]
+                * wave_height_m: Significant wave height [m]
+                * wave_period_sec: Peak wave period [s]
+                * wave_spectrum: Wave spectrum type (e.g., "PM", "JONSWAP")
+                * wave_class: Wave classification (e.g., "irregular", "regular")
+                * wave_seed: Random seed for wave generation
+                * simulation_hash: Unique hash for simulation parameters
+            - `wec_power_results`: High-resolution power time-series
+                * wec_sim_id: Foreign key to wec_simulations
+                * time_sec: Simulation time [s]
+                * device_index: WEC device number (1 for single device)
+                * p_w: Active power output [W]
+                * q_var: Reactive power output [VAr]
+                * wave_elevation_m: Wave surface elevation [m]
                 
         Wave Generation:
-            - Uses WEC-Sim's irregular wave generation capabilities
-            - JONSWAP spectrum with specified significant height and peak period
+            - Uses WEC-Sim's configurable wave generation capabilities
+            - Multiple spectrum types: PM, JONSWAP, etc.
+            - Supports both regular and irregular wave classes
             - Random seed enables reproducible or stochastic simulations
             - Wave time series stored for correlation analysis
             
         Notes:
-            - Formatter file in WEC Model folder with mat files
+            - Results stored in new wec_simulations and wec_power_results tables
             - MATLAB engine automatically stopped after simulation completion
             - Results visualization helps validate simulation quality
-            - Database double-checking recommended for critical simulations
+            - Power values stored in Watts (W) as per new database schema
+            - No downsampling performed - downsampling done later in WEC-Grid
         
         TODO:
             - Add simulation progress bar for long-duration runs
             - Verify database write success with automated checks
-            - Move formatter logic to WECSimRunner 
+            - Add support for multi-device WEC farms 
             
         """
+        print(r"""
+              
+            ⠀ WEC-SIM⠀⠀⠀⠀     ⣠⣴⣶⠾⠿⠿⠯⣷⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣼⣾⠛⠁⠀⠀⠀⠀⠀⠀⠈⢻⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⠿⠁⠀⠀⠀⢀⣤⣾⣟⣛⣛⣶⣬⣿⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+            ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣾⠟⠃⠀⠀⠀⠀⠀⣾⣿⠟⠉⠉⠉⠉⠛⠿⠟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+            ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⡟⠋⠀⠀⠀⠀⠀⠀⠀⣿⡏⣤⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+            ⠀⠀⠀⠀⠀⠀⠀⣠⡿⠛⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⣷⡍⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣤⣤⣤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+            ⠀⠀⠀⠀⠀⣠⣼⡏⠀⠀           ⠈⠙⠷⣤⣤⣠⣤⣤⡤⡶⣶⢿⠟⠹⠿⠄⣿⣿⠏⠀⣀⣤⡦⠀⠀⠀⠀⣀⡄
+            ⢀⣄⣠⣶⣿⠏⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠓⠚⠋⠉⠀⠀⠀⠀⠀⠀⠈⠛⡛⡻⠿⠿⠙⠓⢒⣺⡿⠋⠁
+            ⠉⠉⠉⠛⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠁⠀
+            """)
         
         try:
             model_dir = resolve_wec_model(model)  # accepts name or path
             
             if self.start_matlab():
-                table_name = f"WECSIM_{model.lower()}_{sim_id}"
-                with self.database.connection() as conn:
-                    conn.cursor().execute(f"DROP TABLE IF EXISTS {table_name};")
-
                 print("Starting WEC-SIM simulation...")
-                #model_dir = os.path.join(self.path_manager.wec_models, model)
+                print(f"\t Model: {model}\n"
+                      f"\t Simulation Length: {sim_length} seconds\n"
+                      f"\t Time Step: {delta_time} seconds\n"
+                      f"\t Wave class: {wave_class}\n"
+                      f"\t Wave Height: {wave_height} m\n"
+                      f"\t Wave Period: {wave_period} s\n"
+                      )
                 self.matlab_engine.cd(str(model_dir))
 
-                # Set simulation parameters in MATLAB workspace
-                self.matlab_engine.workspace["sim_id"] = sim_id
-                self.matlab_engine.workspace["model"] = model.lower()
-                self.matlab_engine.workspace["simLength"] = sim_length_secs
-                self.matlab_engine.workspace["Tsample"] = tsample
+                # Set simulation parameters in MATLAB workspace (no sim_id or model needed)
+                self.matlab_engine.workspace["simLength"] = sim_length
+                self.matlab_engine.workspace["dt"] = delta_time
+                self.matlab_engine.workspace["spectrumType"] = spectrum_type
+                self.matlab_engine.workspace["waveClassType"] = wave_class
                 self.matlab_engine.workspace["waveHeight"] = wave_height
                 self.matlab_engine.workspace["wavePeriod"] = wave_period
                 self.matlab_engine.workspace["waveSeed"] = wave_seed
 
                 self.matlab_engine.workspace["DB_PATH"] = self.database.db_path
 
-                # Run the appropriate WEC-SIM function
+                # Run the appropriate WEC-SIM function (simplified call)
                 if model.lower() == "lupa":
                     self.matlab_engine.eval(
-                        "m2g_out = w2gSim_LUPA(sim_id,simLength,Tsample,waveHeight,wavePeriod, model);",
+                        "m2g_out = w2gSim_LUPA(simLength,Tsample,waveHeight,wavePeriod);",
                         nargout=0
                     )
                 else:
                     self.matlab_engine.eval(
-                        "m2g_out = w2gSim(sim_id,simLength,Tsample,waveHeight,wavePeriod,waveSeed,model);",
+                        "[m2g_out] = w2gSim(simLength,dt,spectrumType,waveClassType,waveHeight,wavePeriod,waveSeed);",
                         nargout=0
                     )
                 print("simulation complete... writing to database")
 
                 self.matlab_engine.eval("WECsim_to_PSSe_dataFormatter", nargout=0)
-                print(f"WEC-SIM complete: model = {model}, ID = {sim_id}, duration = {sim_length_secs}s")
-                #todo using the WECGridDB instance, we should double check if the data was written to the database
-                #todo should add a data print or plot here to show the sim results
+                
+                # Get the wec_sim_id that was created by the database
+                wec_sim_id = self.matlab_engine.workspace["wec_sim_id_result"]
+                wec_sim_id = int(wec_sim_id)  # Convert from MATLAB double to Python int
+                
+                print(f"WEC-SIM complete: model = {model}, wec_sim_id = {wec_sim_id}, duration = {sim_length}s")
+                
+                # Query power results for visualization using the returned wec_sim_id
+                power_query = """
+                    SELECT time_sec as time, p_w as p, wave_elevation_m as eta 
+                    FROM wec_power_results 
+                    WHERE wec_sim_id = ? 
+                    ORDER BY time_sec
+                """
+                df_power = self.database.query(
+                    power_query, 
+                    params=(wec_sim_id,), 
+                    return_type="df"
+                )
+                
                 self.stop_matlab()
                 
-                df_ds = self.database.query(f"SELECT * FROM {table_name}", return_type="df")
-                df_full = self.database.query(f"SELECT * FROM {table_name}_full", return_type="df")
-
-                self.sim_results(df_full, df_ds, model, sim_id)
-                return True
+                if not df_power.empty:
+                    self.sim_results(df_power, model, wec_sim_id)
+                
+                return wec_sim_id
 
             print("Failed to start MATLAB engine.")
-            return False
+            return None
 
         except Exception as e:
-            print(f"[WEC-SIM ERROR] model={model}, ID={sim_id} → {e}")
-            return False
+            print(f"[WEC-SIM ERROR] model={model} → {e}")
+            return None

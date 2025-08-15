@@ -1,26 +1,13 @@
-function [m2g_out] = w2gSim(sim_id,simLength,Tsample,waveHeight,wavePeriod,waveSeed, model)
-% runs all the code for generating grid power from a WEC
-% sim_id: 
-% simLength: the duration to run the sim [s]
-% Tsample: the sampling period of the data to be sent to the power flow
-% solver [s]
-% waveHeight: wave height [m]
-% wavePeriod: wave period [s]
-% waveSeed (optional): initial seed used to generate the wave profile [integer]
+function [m2g_out] = w2gSim(simLength,dt,spectrumType,waveClassType,waveHeight,wavePeriod,waveSeed)
 
-%if no seed given, generate one
-if exist('waveSeed') == 0
-    rng()
-    waveSeed = randi(1e9);
-else
-end
-
-%make sure variables are the right type
 simLength = double(simLength);
-Tsample = double(Tsample);
+dt = double(dt);
+spectrumType = char(spectrumType);
+waveClassType = char(waveClassType);
 waveHeight = double(waveHeight);
 wavePeriod = double(wavePeriod);
 waveSeed = int32(waveSeed);
+
 
 
 %% Initialization of WEC-Sim
@@ -46,19 +33,18 @@ enableUserDefinedFunctions = 0; %set whether the UDFs are called, 0 to not call
 %run post-sim script
 run('stopWecSim');
 
-%downsample data to desired resolution for PSSE
-m2g_out.Pgrid_ds = DownSampleTS(m2g_out.Pgrid,Tsample,1);
-m2g_out.Qgrid_lim_ds = DownSampleTS(m2g_out.Qgrid_lim,Tsample,1);
 
-%add wec-id to struct
-m2g_out.sim_id = sim_id;
+%add simulation parameters to struct for database storage
+m2g_out.model = 'RM3'; %hardcoded model name for this device directory (char array)
+m2g_out.simLength = simLength; %add simulation duration
+m2g_out.dt = dt; %add sampling period
 
-m2g_out.model = model; %add model name to output
-
-% Raw wave elevation η(t) from WEC-Sim
+% Wave parameters already included:
 m2g_out.Hs        = waves.height;     % m
 m2g_out.Tp        = waves.period;     % s
 m2g_out.seed      = waves.phaseSeed;  % int
+m2g_out.spectrumType = spectrumType; % char array
+m2g_out.waveClass = waveClassType; % char array
 m2g_out.t_eta = waves.waveAmpTime(:,1);
 m2g_out.eta   = waves.waveAmpTime(:,2);
  

@@ -74,7 +74,7 @@ class Engine:
         self.psse: Optional[PSSEModeler] = None
         self.pypsa: Optional[PyPSAModeler] = None
         self.wec_farms: List[WECFarm] = []
-        self.database = WECGridDB()
+        self.database = WECGridDB(self)
         self.plot = WECGridPlotter(self)
         self.wec_sim: WECSimRunner = WECSimRunner(self.database)
 

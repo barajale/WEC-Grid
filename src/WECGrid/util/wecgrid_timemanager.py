@@ -51,6 +51,7 @@ class WECGridTimeManager:
     start_time: datetime = field(default_factory=lambda: datetime.now().replace(hour=0, minute=0, second=0, microsecond=0))
     sim_length: int = 288
     freq: str = "5T"
+    delta_time: int = 300  # seconds
 
     def __post_init__(self):
         """Initialize derived simulation parameters after dataclass construction."""

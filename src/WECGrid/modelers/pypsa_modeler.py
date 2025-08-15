@@ -91,6 +91,7 @@ class PyPSAModeler(PowerSystemModeler):
         """
         super().__init__(engine)
         self.network: Optional[pypsa.Network] = None
+        self.grid.software = "pypsa"
     
 
     def __repr__(self) -> str:
@@ -314,13 +315,13 @@ class PyPSAModeler(PowerSystemModeler):
             ctrl = ide_to_ctrl.get(self.parser.bus_lookup[g.i].ide, "PQ")
 
             # Active power limits and nominal power
-            p_nom = g.pt
-            p_nom_min = g.pb
-            p_set = g.pg
+            p_nom = g.pt # pt (float): active power output upper bound (MW)
+            p_nom_min = g.pb # pb (float): active power output lower bound (MW)
+            p_set = g.pg # pg (float): active power output (MW)
             p_min_pu = g.pb / g.pt if g.pt != 0 else 0.0  # Avoid div by zero
 
             # Reactive setpoint
-            q_set = g.qg
+            q_set = g.qg # qg (float): reactive power output (MVAr)
 
             # Optional: carrier type (e.g., detect wind)
             carrier = "wind" if getattr(g, "wmod", 0) != 0 else "other"
@@ -493,6 +494,7 @@ class PyPSAModeler(PowerSystemModeler):
                 control="PV",
             )
             self.grid = GridState()  # TODO Reset state after adding farm but should be a bette way
+            self.grid.software = "pypsa"
             self.solve_powerflow()
             self.take_snapshot(timestamp=self.engine.time.start_time)  # Update grid state
             return True
@@ -590,6 +592,8 @@ class PyPSAModeler(PowerSystemModeler):
         self.grid.update("line", timestamp, self.snapshot_lines())
         self.grid.update("load",   timestamp, self.snapshot_loads())
 
+        
+        
     def snapshot_buses(self) -> pd.DataFrame:
         """Capture current bus state from PyPSA.
         
@@ -599,20 +603,22 @@ class PyPSAModeler(PowerSystemModeler):
         
         Returns:
             pd.DataFrame: DataFrame with columns: bus, bus_name, type, p, q, v_mag, 
-                angle_deg, base. Index represents individual buses.
+                angle_deg, Vbase. Index represents individual buses.
                 
         Notes:
             The following PyPSA network data is used to create bus snapshots:
             
+            link - https://pypsa.readthedocs.io/en/stable/user-guide/components.html#bus
+            
             Bus Information:
-            - Bus names and numbers (converted from string indices) [dimensionless]
-            - Bus control types (PQ, PV, Slack) [string]
-            - Base voltage levels [kV]
+            - Bus names and numbers "name" (converted from string indices) [dimensionless]
+            - Bus control types "type"(PQ, PV, Slack) [string]
+            - Base voltage levels "v_nom" [kV] 
             
             Electrical Quantities:
-            - Active and reactive power injections [MW], [MVAr] → [pu]
-            - Voltage magnitude [pu]
-            - Voltage angle [radians] → [degrees]
+            - Active and reactive power injections "p", "q" [MW], [MVAr] → [pu]
+            - Voltage magnitude "v_mag_pu" [pu] of v_nom
+            - Voltage angle "v_ang" [radians] → [degrees]
             
             Time Series Data:
             - Uses latest snapshot from network.snapshots
@@ -638,18 +644,17 @@ class PyPSAModeler(PowerSystemModeler):
 
         df = pd.DataFrame({
             "bus":       buses.index.astype(int),
-            "bus_name":  buses.index.astype(str),
+            "bus_name":  f"Bus_{buses.index.astype(int)}",
             "type":      buses.get("control", pd.Series("PQ", index=buses.index)).fillna("PQ"),
-            # per-unit on system base:
             "p":         (p_MW / self.sbase).astype(float),
             "q":         (q_MVAr / self.sbase).astype(float),
             "v_mag":     vmag_pu.astype(float),
             "angle_deg": np.degrees(vang_rad.astype(float)),
-            # base kV (like your PSSE column):
-            "base":      buses.get("v_nom", pd.Series(np.nan, index=buses.index)).astype(float),
+            "Vbase":      buses.get("v_nom", pd.Series(np.nan, index=buses.index)).astype(float),
         })
 
         df.attrs["df_type"] = "BUS"
+        df.index = pd.RangeIndex(start=0, stop=len(df))
         return df
             
 
@@ -665,6 +670,7 @@ class PyPSAModeler(PowerSystemModeler):
                 
         Notes:
             The following PyPSA network data is used to create generator snapshots:
+            link - https://pypsa.readthedocs.io/en/stable/user-guide/components.html#generator
             
             Generator Information:
             - Generator names and bus assignments [dimensionless]
@@ -701,29 +707,32 @@ class PyPSAModeler(PowerSystemModeler):
             stat  = pd.Series(1,   index=idx, dtype=int)
 
         # Counter per bus for naming
-        counter = defaultdict(int)
+
         bus_nums = []
+        gen_ids = []
         gen_names = []
 
-        for bus in gens["bus"]:
+        for i, bus in enumerate(gens["bus"]):
             try:
                 bus_num = int(bus)
             except Exception:
                 bus_num = bus
             bus_nums.append(bus_num)
-            gen_names.append(f"{bus_num}_{counter[bus_num] + 1}")
-            counter[bus_num] += 1
+            gen_ids.append(i+1)
+            gen_names.append(f"Gen_{i+1}")
 
         df = pd.DataFrame({
-            "gen":    gen_names,
+            "gen":    gen_ids,
+            "gen_name": gen_names,
             "bus":    bus_nums,
             "p":      (p_MW   / sbase).astype(float),
             "q":      (q_MVAr / sbase).astype(float),
-            "base":   float(sbase),
+            "Mbase":   0.0, # MBASE not avaiable
             "status": stat.astype(int),
         })
 
         df.attrs["df_type"] = "GEN"
+        df.index = pd.RangeIndex(start=0, stop=len(df))
         return df
     
 
@@ -776,25 +785,14 @@ class PyPSAModeler(PowerSystemModeler):
             q1 = pd.Series(0.0, index=idx)
 
         rows = []
-        counter = defaultdict(int)
 
-        for line_name, line in n.lines.iterrows():
+        for i, (line_name, line) in enumerate(n.lines.iterrows()):
             ibus_name, jbus_name = line.bus0, line.bus1
 
-            # Try to preserve numeric bus IDs (we named PyPSA buses as strings of PSS/E numbers)
-            def _busnum(name: str) -> int:
-                try:
-                    return int(name)
-                except Exception:
-                    # fallback: 1-based position
-                    return n.buses.index.get_loc(name) + 1
-
-            ibus = _busnum(ibus_name)
-            jbus = _busnum(jbus_name)
-
-            counter[(ibus, jbus)] += 1
-            k = counter[(ibus, jbus)]  # start at 1 now
-            line_id = f"Line_{ibus}_{jbus}_{k}"
+            ibus = int(ibus_name)
+            jbus = int(jbus_name)
+            
+            line_id = i+1
 
             # apparent power (MVA) at each end
             S0 = np.hypot(p0[line_name], q0[line_name])
@@ -806,6 +804,7 @@ class PyPSAModeler(PowerSystemModeler):
 
             rows.append({
                 "line":     line_id,
+                "line_name": f"Line_{line_id}",
                 "ibus":     ibus,
                 "jbus":     jbus,
                 "line_pct": line_pct,  # % of s_nom at latest snapshot
@@ -814,7 +813,7 @@ class PyPSAModeler(PowerSystemModeler):
 
         df = pd.DataFrame(rows)
         df.attrs["df_type"] = "LINE"
-        df.index = pd.RangeIndex(len(df))
+        df.index = pd.RangeIndex(start=0, stop=len(df))
         return df
 
 
@@ -831,6 +830,8 @@ class PyPSAModeler(PowerSystemModeler):
                 
         Notes:
             The following PyPSA network data is used to create load snapshots:
+            
+            link - https://pypsa.readthedocs.io/en/stable/user-guide/components.html#load
             
             Load Information:
             - Load names and bus assignments [dimensionless]
@@ -859,34 +860,27 @@ class PyPSAModeler(PowerSystemModeler):
             p_MW = pd.Series(0.0, index=idx)
             q_MVAr = pd.Series(0.0, index=idx)
 
-        # helper: recover numeric bus id; PyPSA bus names are strings
-        def _busnum(name: str) -> int:
-            try:
-                return int(name)
-            except Exception:
-                return n.buses.index.get_loc(name) + 1  # stable fallback
-
         # status: use 'active' if present, else assume in-service
         has_active = "active" in getattr(n.loads, "columns", [])
         status_series = (n.loads["active"].astype(bool) if has_active
                         else pd.Series(True, index=n.loads.index))
 
-        rows, counters = [], defaultdict(int)
+        rows= []
+        count = 1
         for load_name, rec in n.loads.iterrows():
-            bus = _busnum(rec.bus)
-            counters[bus] += 1
-            k = counters[bus]  # start at 1 now
+            bus = int(rec.bus)
 
             rows.append({
-                "load":   f"Load_{bus}_{k}",
+                "load": count,
+                "load_name": f"Load_{count}",
                 "bus":    bus,
                 "p":      float(p_MW.get(load_name, 0.0)) / sbase,
                 "q":      float(q_MVAr.get(load_name, 0.0)) / sbase,
-                "base":   sbase,
                 "status": 1 if bool(status_series.get(load_name, True)) else 0,
             })
+            count +=1
 
         df = pd.DataFrame(rows)
         df.attrs["df_type"] = "LOAD"
-        df.index = pd.RangeIndex(len(df))
+        df.index = pd.RangeIndex(start=0, stop=len(df))
         return df

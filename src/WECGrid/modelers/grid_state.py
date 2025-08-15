@@ -82,6 +82,7 @@ class GridState:
         """
         # Empty DataFrames with appropriate dtypes — index will be set on first update
         empty_df = pd.DataFrame()
+        self.software: str = ""
 
         # Snapshot (single-time) dataframes
         self.bus: pd.DataFrame = empty_df.copy()
@@ -133,82 +134,102 @@ class GridState:
         )
 
     def update(self, component: str, timestamp: pd.Timestamp, df: pd.DataFrame):
-        """Update snapshot and time-series data for a power system component.
-        
+        """
+        Update snapshot and time-series data for a power system component.
+
         This method updates both the current snapshot DataFrame and the historical
         time-series data for the specified component type. It expects DataFrames
-        with standardized schemas and proper df_type attributes.
-        
+        with standardized WEC-Grid schemas and proper `df.attrs['df_type']` attributes.
+
         Args:
-            component (str): Component type ("bus", "gen", "line", "load").
-            timestamp (pd.Timestamp): Timestamp for this snapshot.
-            df (pd.DataFrame): Component data with df.attrs['df_type'] set to
-                one of {"BUS", "GEN", "LINE", "LOAD"}.
-        
+            component (str):
+                Component type ("bus", "gen", "line", "load").
+            timestamp (pd.Timestamp):
+                Timestamp for this snapshot.
+            df (pd.DataFrame):
+                Component data with `df.attrs['df_type']` set to one of
+                {"BUS", "GEN", "LINE", "LOAD"}.
+
         Raises:
-            ValueError: If component is not recognized, df_type is invalid, or
-                required ID columns are missing.
-                
-        DataFrame Schemas:
-            
-            **Bus DataFrame (df_type="BUS")**:
-            
-            | Column      | Description                           | Type  | Units    |
-            |-------------|---------------------------------------|-------|----------|
-            | bus         | Bus number (unique identifier)        | int   | -        |
-            | bus_name    | Bus name/label                        | str   | -        |
-            | type        | Bus type (Slack/PV/PQ)                | str   | -        |
-            | p           | Net active power injection            | float | pu       |
-            | q           | Net reactive power injection          | float | pu       |
-            | v_mag       | Voltage magnitude                     | float | pu       |
-            | angle_deg   | Voltage angle                         | float | degrees  |
-            | base        | Base voltage                          | float | kV       |
-            
-            **Generator DataFrame (df_type="GEN")**:
-            
-            | Column      | Description                           | Type  | Units    |
-            |-------------|---------------------------------------|-------|----------|
-            | gen         | Generator ID (e.g., "1_1", "2_1")    | str   | -        |
-            | bus         | Connected bus number                  | int   | -        |
-            | p           | Active power output                   | float | pu       |
-            | q           | Reactive power output                 | float | pu       |
-            | base        | Generator base MVA                    | float | MVA      |
-            | status      | Generator status (1=online, 0=off)   | int   | -        |
-            
-            **Line DataFrame (df_type="LINE")**:
-            
-            | Column      | Description                           | Type  | Units    |
-            |-------------|---------------------------------------|-------|----------|
-            | line        | Line ID (e.g., "Line_1_2_1")         | str   | -        |
-            | ibus        | From bus number                       | int   | -        |
-            | jbus        | To bus number                         | int   | -        |
-            | line_pct    | Line loading percentage               | float | %        |
-            | status      | Line status (1=online, 0=offline)    | int   | -        |
-            
-            **Load DataFrame (df_type="LOAD")**:
-            
-            | Column      | Description                           | Type  | Units    |
-            |-------------|---------------------------------------|-------|----------|
-            | load        | Load ID (e.g., "Load_1_1")           | str   | -        |
-            | bus         | Connected bus number                  | int   | -        |
-            | p           | Active power consumption              | float | pu       |
-            | q           | Reactive power consumption            | float | pu       |
-            | base        | System base MVA                       | float | MVA      |
-            | status      | Load status (1=connected, 0=off)     | int   | -        |
-        
-        Notes:
-            - All power values (p, q) are in per-unit on the appropriate base
-            - Bus types: "Slack" (reference), "PV" (voltage controlled), "PQ" (load)
-            - Component IDs must be unique within each component type
-            - Line loading is percentage of thermal rating (not per-unit)
-            - Status codes: 1 = in-service/online, 0 = out-of-service/offline
-            
+            ValueError:
+                If component is not recognized, `df_type` is invalid, or required
+                ID columns are missing.
+
+        ----------------------------------------------------------------------
+        DataFrame Schemas
+        ----------------------------------------------------------------------
+        Component ID:
+            for the component attribute the ID will be an incrementing ID number starting from 1 in order of bus number
+
+        Component Names:
+            for the component_name attribute the name will be the corresponding component label and ID (e.g., "Bus_1", "Gen_1").
+
+        **Bus DataFrame** (`df_type="BUS"`)
+
+        | Column    | Description                                 | Type   | Units            | Base Used              |
+        |-----------|---------------------------------------------|--------|------------------|------------------------|
+        | bus       | Bus number (unique identifier)              | int    | —                | —                      |
+        | bus_name  | Bus name/label (e.g., "Bus_1", "Bus_2")     | str    | —                | —                      |
+        | type      | Bus type: "Slack", "PV", "PQ"               | str    | —                | —                      |
+        | p         | Net active power injection (Gen − Load)     | float  | pu               | **S_base** (MVA)       |
+        | q         | Net reactive power injection (Gen − Load)   | float  | pu               | **S_base** (MVA)       |
+        | v_mag     | Voltage magnitude                           | float  | pu               | **V_base** (kV LL)     |
+        | angle_deg | Voltage angle                               | float  | degrees          | —                      |
+        | Vbase     | Bus nominal voltage (line-to-line)          | float  | kV               | —                      |
+
+        **Generator DataFrame** (`df_type="GEN"`)
+
+        | Column     | Description                                 | Type   | Units            | Base Used              |
+        |------------|---------------------------------------------|--------|------------------|------------------------|
+        | gen        | Generator ID                                | int    | —                | —                      |
+        | gen_name   | Generator name (e.g., "Gen_1")              | str    | —                | —                      |
+        | bus        | Connected bus number                        | int    | —                | —                      |
+        | p          | Active power output                         | float  | pu               | **S_base** (MVA)       |
+        | q          | Reactive power output                       | float  | pu               | **S_base** (MVA)       |
+        | Mbase      | Generator nameplate MVA rating              | float  | MVA              | **Mbase** (machine)    |
+        | status     | Generator status (1=online, 0=offline)      | int    | —                | —                      |
+
+        **Load DataFrame** (`df_type="LOAD"`)
+
+        | Column     | Description                                 | Type   | Units            | Base Used              |
+        |------------|---------------------------------------------|--------|------------------|------------------------|
+        | load       | Load ID                                     | int    | —                | —                      |
+        | load_name  | Load name (e.g., "Load_1")                  | str    | —                | —                      |
+        | bus        | Connected bus number                        | int    | —                | —                      |
+        | p          | Active power demand                         | float  | pu               | **S_base** (MVA)       |
+        | q          | Reactive power demand                       | float  | pu               | **S_base** (MVA)       |
+        | status     | Load status (1=connected, 0=offline)        | int    | —                | —                      |
+
+        **Line DataFrame** (`df_type="LINE"`)
+
+        | Column     | Description                                 | Type   | Units            | Base Used              |
+        |------------|---------------------------------------------|--------|------------------|------------------------|
+        | line       | Line ID                                     | int    | —                | —                      |
+        | line_name  | Line name (e.g., "Line_1_2")                | str    | —                | —                      |
+        | ibus       | From bus number                             | int    | —                | —                      |
+        | jbus       | To bus number                               | int    | —                | —                      |
+        | line_pct   | Percentage of thermal rating in use         | float  | %                | —                      |
+        | status     | Line status (1=online, 0=offline)           | int    | —                | —                      |
+
+        ----------------------------------------------------------------------
+        Base Usage Summary
+        ----------------------------------------------------------------------
+        - **S_base (System Power Base):**
+        All `p` and `q` values across buses, generators, and loads are in per-unit
+        on the single, case-wide power base (e.g., 100 MVA):
+
+        - **V_base (Bus Voltage Base):**
+        Each bus has a nominal voltage in kV (line-to-line)
+
+        - **Mbase (Machine Base):**
+        Per-generator nameplate MVA rating used for manufacturer parameters. 
+
         Example:
             >>> # Update bus data at current time
-            >>> bus_df = create_bus_dataframe()  # With proper schema
+            >>> bus_df = create_bus_dataframe()  # with proper schema
             >>> bus_df.attrs['df_type'] = 'BUS'
             >>> grid.update("bus", pd.Timestamp.now(), bus_df)
-            >>> 
+
             >>> # Access updated data
             >>> current_buses = grid.bus
             >>> voltage_timeseries = grid.bus_t.v_mag
