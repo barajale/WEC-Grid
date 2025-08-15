@@ -77,6 +77,7 @@ class Engine:
         self.database = WECGridDB(self)
         self.plot = WECGridPlotter(self)
         self.wec_sim: WECSimRunner = WECSimRunner(self.database)
+        self.Sbase: Optional[float] = None
 
 
     def case(self, case_file: str):
@@ -137,10 +138,12 @@ class Engine:
             if name == "psse":
                 self.psse = PSSEModeler(self)
                 self.psse.init_api()
+                self.sbase = self.psse.sbase
                 #TODO: check if error is thrown if init fails
             elif name == "pypsa":
                 self.pypsa = PyPSAModeler(self)
                 self.pypsa.init_api()
+                self.sbase = self.pypsa.sbase
                 # if self.psse is not None:
                 #     self.psse.adjust_reactive_lim()
                 #TODO: check if error is thrown if init fails
@@ -151,8 +154,7 @@ class Engine:
         self,
         farm_name: str,
         size: int = 1,
-        sim_id: int = 1,
-        model: str = "RM3",
+        wec_sim_id: int = 1,
         bus_location: int = 1,
         connecting_bus: int = 1, # todo this should default to swing bus
     ) -> None:
@@ -161,7 +163,7 @@ class Engine:
         Args:
             farm_name (str): Human-readable WEC farm identifier.
             size (int, optional): Number of WEC devices in farm. Defaults to 1.
-            sim_id (int, optional): Database simulation ID for WEC data. Defaults to 1.
+            wec_sim_id (int, optional): Database simulation ID for WEC data. Defaults to 1.
             model (str, optional): WEC device model type. Defaults to "RM3".
             bus_location (int, optional): Grid bus for WEC connection. Defaults to 1.
             connecting_bus (int, optional): Network topology connection bus. Defaults to 1.
@@ -188,12 +190,12 @@ class Engine:
             farm_name=farm_name,
             database=self.database,
             time=self.time,
-            sim_id= sim_id,
-            model=model,
+            wec_sim_id= wec_sim_id,
             bus_location=bus_location, 
             connecting_bus=connecting_bus,
             size=size,
             gen_id= len(self.wec_farms) + 1,  # Unique gen_id for each farm,
+            sbase = self.sbase
             #TODO potenital issue where PSSE is using gen_id as the gen identifer and that's limited to 2 chars. so hard cap at 9 farms in this code rn
 
         )

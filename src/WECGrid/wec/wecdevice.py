@@ -54,10 +54,9 @@ class WECDevice:
     name: str
     dataframe: pd.DataFrame = field(default_factory=pd.DataFrame)
     dataframe_full: pd.DataFrame = field(default_factory=pd.DataFrame)
-    base: Optional[float] = None  # 100 MVA probably
     bus_location: Optional[int] = None
     model: Optional[str] = None
-    sim_id: Optional[int] = None
+    wec_sim_id: Optional[int] = None
 
     def __repr__(self) -> str:
         """Return a formatted string representation of the WEC device configuration.
@@ -78,7 +77,6 @@ class WECDevice:
             ...     model="RM3",
             ...     bus_location=14,
             ...     sim_id=101,
-            ...     base=100.0,
             ...     dataframe=power_data  # 288 rows
             ... )
             >>> print(device)
@@ -87,14 +85,12 @@ class WECDevice:
             ├─ model: 'RM3'
             ├─ bus_location: 14
             ├─ sim_id: 101
-            ├─ base: 100.0 MVA
             └─ rows: 288
             
         Display Format:
             - **Tree structure**: Uses Unicode box-drawing characters
             - **Device identification**: Name and model type in quotes
             - **Grid parameters**: Bus location and simulation ID as integers
-            - **Power rating**: Base power with MVA units
             - **Data size**: Number of time-series data points
             
         Information Categories:
@@ -102,7 +98,6 @@ class WECDevice:
             - **Type**: WEC model for hydrodynamic characteristics
             - **Grid connection**: Bus location for electrical network modeling
             - **Simulation link**: Database ID for traceability
-            - **Power rating**: Base MVA for per-unit calculations
             - **Data status**: Time-series length for validation
             
         Use Cases:
@@ -126,7 +121,6 @@ class WECDevice:
     ├─ name: {self.name!r}
     ├─ model: {self.model!r}
     ├─ bus_location: {self.bus_location}
-    ├─ sim_id: {self.sim_id}
-    ├─ base: {"{} MVA".format(self.base)}
+    ├─ sim_id: {self.wec_sim_id}
     └─ rows: {len(self.dataframe)}
     """

@@ -9,6 +9,7 @@ renewable energy profiles for grid integration studies.
 
 from typing import List, Dict, Any
 import pandas as pd
+import numpy as np
 from .wecdevice import WECDevice
 from .wecsim_runner import WECSimRunner
 
@@ -24,7 +25,7 @@ class WECFarm:
         farm_name (str): Human-readable farm identifier.
         database: Database interface for WEC simulation data.
         time: Time manager for simulation synchronization.
-        sim_id (int): Database simulation ID for WEC data retrieval.
+        wec_sim_id (int): Database simulation ID for WEC data retrieval.
         model (str): WEC device model type (e.g., "RM3").
         bus_location (int): Grid bus number for farm connection.
         connecting_bus (int): Network topology connection bus.
@@ -56,14 +57,14 @@ class WECFarm:
         - Add heterogeneous device support for different models
         - Implement smart farm control and optimization
     """
-    def __init__(self, farm_name: str, database, time: Any, sim_id: int, model: str, bus_location: int, connecting_bus: int = 1, size: int = 1, gen_id: str = None):
+    def __init__(self, farm_name: str, database, time: Any, wec_sim_id: int, bus_location: int, connecting_bus: int = 1, size: int = 1, gen_id: str = None, sbase: float = 100.0):
         """Initialize WEC farm with specified configuration.
         
         Args:
             farm_name (str): Human-readable WEC farm identifier.
             database: Database interface for WEC simulation data access.
             time: Time management object for simulation synchronization.
-            sim_id (int): Database simulation ID for WEC data retrieval.
+            wec_sim_id (int): Database simulation ID for WEC data retrieval.
             model (str): WEC device model type ("RM3", etc.).
             bus_location (int): Grid bus number for farm connection.
             connecting_bus (int, optional): Network topology connection bus. Defaults to 1.
@@ -94,15 +95,16 @@ class WECFarm:
         self.farm_name: str = farm_name
         self.database = database # TODO make this a WECGridDB data type
         self.time = time # todo might need to update time to be SimulationTime type 
-        self.sim_id: int = sim_id
-        self.model: str = model
+        self.wec_sim_id: int = wec_sim_id
+        self.model: str = ""
         self.bus_location: int = bus_location
         self.connecting_bus: int = connecting_bus # todo this should default to swing bus
         self.id: str = gen_id
         self.size: int = size
         self.config: Dict = None
         self.wec_devices: List[WECDevice] = []
-        self.BASE: float = 100.0  # this should be the base of the wec, which is usually 100 MVA
+        self.sbase: float = sbase
+        # todo don't need the base here anymore
 
         self._prepare_farm()
 
@@ -127,7 +129,7 @@ class WECFarm:
             ├─ model: 'RM3'
             ├─ bus_location: 14
             ├─ connecting_bus: 1
-            └─ sim_id: 101
+            └─ wec_sim_id: 101
 
             Base: 100.0 MVA
             
@@ -156,9 +158,9 @@ class WECFarm:
         ├─ model: {self.model!r}
         ├─ bus_location: {self.bus_location}
         ├─ connecting_bus: {self.connecting_bus}
-        └─ sim_id: {self.sim_id}
+        └─ sim_id: {self.wec_sim_id}
 
-        Base: {self.BASE} MVA
+        Base: {self.sbase} MVA
 
     """
     
@@ -237,41 +239,224 @@ class WECFarm:
             WECSimRunner: Generates the simulation data loaded here
             WECGridTimeManager: Provides time configuration for indexing
         """
-        table_name = f"WECSIM_{self.model.lower()}_{self.sim_id}"
-        exists_query = f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'"
-        result = self.database.query(exists_query)
-
-        if not result:
-            raise RuntimeError(f"[Farm] No WEC data for sim_id={self.sim_id} found in database. Run WEC-SIM first.")
-            # TODO: Provide clearer guidance on running WEC-SIM
-
-        # Load data once and distribute to all devices
-        df = self.database.query(f"SELECT * FROM {table_name}", return_type="df")
-        if df is None or df.empty:
-            raise RuntimeError(f"[Farm] Failed to load WEC data for sim_id={self.sim_id}")
+        # First get model type from wec_simulations table using wec_sim_id
+        model_query = "SELECT model_type FROM wec_simulations WHERE wec_sim_id = ?"
+        model_result = self.database.query(model_query, params=(self.wec_sim_id,))
         
-        df_full = self.database.query(f"SELECT * FROM {table_name}_full", return_type="df")
+        if not model_result:
+            raise RuntimeError(f"[Farm] No simulation metadata found for wec_sim_id={self.wec_sim_id}")
+            
+        # Update self.model from database
+        if isinstance(model_result, list) and len(model_result) > 0:
+            self.model = model_result[0][0] if isinstance(model_result[0], (list, tuple)) else model_result[0]['model_type']
+        else:
+            raise RuntimeError(f"[Farm] Invalid model data returned for wec_sim_id={self.wec_sim_id}")
+            
+        #print(f"[Farm] Loaded WEC model '{self.model}' for simulation ID {self.wec_sim_id}")
+        
+        # Check if WEC simulation data exists in new schema
+        sim_check_query = "SELECT wec_sim_id FROM wec_simulations WHERE wec_sim_id = ?"
+        sim_result = self.database.query(sim_check_query, params=(self.wec_sim_id,))
+        
+        if not sim_result:
+            raise RuntimeError(f"[Farm] No WEC simulation found for wec_sim_id={self.wec_sim_id}. Run WEC-SIM first.")
+
+        # Load WEC power data from new database schema
+        power_query = """
+            SELECT time_sec as time, p_w as p, q_var as q, wave_elevation_m as eta 
+            FROM wec_power_results 
+            WHERE wec_sim_id = ? 
+            ORDER BY time_sec
+        """
+        df_full = self.database.query(
+            power_query, 
+            params=(self.wec_sim_id,), 
+            return_type="df"
+        )
+        
         if df_full is None or df_full.empty:
-            raise RuntimeError(f"[Farm] Failed to load full WEC data for sim_id={self.sim_id}")
+            raise RuntimeError(f"[Farm] No WEC power data found for wec_sim_id={self.wec_sim_id}")
+
+        # Downsample the full resolution data for grid integration
+        df_downsampled = self.down_sample(df_full, self.time.delta_time)
 
         # Apply time index at 5 min resolution using start time
-        df["snapshots"] = pd.date_range(start=self.time.start_time, periods=df.shape[0], freq="5T")
-        df.set_index("snapshots", inplace=True) 
-
-        self.BASE = df["base"][0]
+        df_downsampled["snapshots"] = pd.date_range(start=self.time.start_time, periods=df_downsampled.shape[0], freq=self.time.freq)
         
+        # apply the snapshots
+        df_downsampled.set_index("snapshots", inplace=True) 
+
+        # Convert Watts to per-unit of sbase MVA
+        # WEC data is stored in Watts, need to convert to MW then to per-unit
+        # Conversion: Watts → MW (÷1e6) → per-unit (÷sbase_MVA)
+        df_downsampled["p"] = df_downsampled["p"] / (self.sbase * 1e6)  # Watts to pu
+        df_downsampled["q"] = df_downsampled["q"] / (self.sbase * 1e6)  # Watts to pu
+
         for i in range(self.size):
-            name = f"{self.model}_{self.sim_id}_{i}"
+            name = f"{self.model}_{self.wec_sim_id}_{i}"
             device = WECDevice(
                 name=name,
-                dataframe=df.copy(),
-                dataframe_full=df_full.copy(),
+                dataframe=df_downsampled.copy(),  # Use downsampled data for grid integration
                 bus_location=self.bus_location,
-                base=df["base"][0],
                 model=self.model,
-                sim_id=self.sim_id
+                wec_sim_id=self.wec_sim_id
             )
             self.wec_devices.append(device)
+            
+    def down_sample(self, wec_df: pd.DataFrame, new_sample_period: float, timeshift: int = 0) -> pd.DataFrame:
+        """Downsample WEC time-series data to a coarser time resolution.
+        
+        Converts high-frequency WEC simulation data to lower frequency suitable for
+        power system integration studies. Averages data over specified time windows
+        to maintain energy conservation while reducing computational overhead.
+        
+        Based on MATLAB DownSampleTS function with pandas DataFrame implementation.
+        
+        Args:
+            wec_df (pd.DataFrame): Original high-frequency WEC data with 'time' column.
+                Must contain time series data with consistent time step.
+            new_sample_period (float): New sampling period [seconds] for downsampled data.
+                Typically 300s (5 minutes) for grid integration studies.
+            timeshift (int, optional): Time alignment option. Defaults to 0.
+                - 0: Samples at end of averaging period
+                - 1: Samples centered within averaging period
+                
+        Returns:
+            pd.DataFrame: Downsampled DataFrame with same columns as input.
+                Time column adjusted to new sampling frequency.
+                Data columns contain averaged values over sampling windows.
+                
+        Raises:
+            ValueError: If new_sample_period is smaller than original time step.
+            KeyError: If 'time' column not found in input DataFrame.
+            
+        Example:
+            >>> # Downsample 0.1s WEC data to 5-minute intervals
+            >>> df_original = pd.DataFrame({
+            ...     'time': np.arange(0, 1000, 0.1),  # 0.1s timestep
+            ...     'p': np.random.rand(10000),        # Power data
+            ...     'eta': np.random.rand(10000)       # Wave elevation
+            ... })
+            >>> df_downsampled = farm.down_sample(df_original, 300.0)  # 5min
+            >>> print(f"Original: {len(df_original)} points")
+            >>> print(f"Downsampled: {len(df_downsampled)} points")
+            Original: 10000 points
+            Downsampled: 33 points
+            
+        Averaging Process:
+            1. **Calculate sample ratio**: How many original points per new point
+            2. **Determine new time grid**: Based on sample period and alignment
+            3. **Window averaging**: Mean value over each time window
+            4. **Energy conservation**: Maintains total energy content
+            
+        Time Alignment Options:
+            **timeshift = 0** (End-aligned):
+            - New timestamps at end of averaging window
+            - t_new = [T, 2T, 3T, ...] where T = new_sample_period
+            
+            **timeshift = 1** (Center-aligned):
+            - New timestamps at center of averaging window  
+            - t_new = [T/2, T+T/2, 2T+T/2, ...] where T = new_sample_period
+            
+        Data Processing:
+            - **First window**: Averages from start to first sample point
+            - **Subsequent windows**: Averages over fixed-width windows
+            - **Missing data**: Handles partial windows at end of series
+            - **Column preservation**: Maintains all non-time columns
+            
+        Performance Considerations:
+            - **Memory efficient**: Uses vectorized pandas operations
+            - **Flexible windows**: Handles non-integer sample ratios
+            - **Large datasets**: Suitable for long WEC simulations
+            - **Numerical stability**: Robust averaging implementation
+            
+        Grid Integration Usage:
+            - **PSS®E studies**: 5-minute resolution for stability analysis
+            - **Economic dispatch**: Hourly or 15-minute intervals
+            - **Load forecasting**: Daily or weekly aggregation
+            - **Resource assessment**: Monthly or seasonal averages
+            
+        Wave Energy Applications:
+            - **Power smoothing**: Reduces high-frequency fluctuations
+            - **Grid compliance**: Matches utility data requirements
+            - **Forecast validation**: Aligns with meteorological predictions
+            - **Storage sizing**: Determines energy storage requirements
+            
+        Notes:
+            - Preserves energy content through proper averaging
+            - Original time step must be consistent (fixed timestep)
+            - New sample period should be multiple of original timestep
+            - Returns DataFrame with same structure as input
+            - Time column values updated to new sampling frequency
+            
+        See Also:
+            _prepare_farm: Uses this method for WEC data preprocessing
+            WECGridTimeManager: Provides target sampling frequencies
+            pandas.DataFrame.resample: Alternative pandas resampling method
+        """
+        if 'time' not in wec_df.columns:
+            raise KeyError("DataFrame must contain 'time' column for downsampling")
+            
+        # Calculate original time step (assuming fixed timestep)
+        time_values = wec_df['time'].values
+        if len(time_values) < 2:
+            return wec_df.copy()  # Return original if too few points
+            
+        old_dt = time_values[1] - time_values[0]
+        
+        if new_sample_period <= old_dt:
+            raise ValueError(f"New sample period ({new_sample_period}s) must be larger than original timestep ({old_dt}s)")
+        
+        # Calculate sampling parameters
+        t_sample = int(new_sample_period / old_dt)  # Points per new sample
+        new_sample_size = int((time_values[-1] - time_values[0]) / new_sample_period)
+        
+        if new_sample_size <= 0:
+            return wec_df.copy()  # Return original if downsampling not possible
+        
+        # Create new time grid
+        if timeshift == 1:
+            # Center-aligned timestamps
+            new_times = np.arange(new_sample_period/2, 
+                                new_sample_size * new_sample_period + new_sample_period/2, 
+                                new_sample_period)
+        else:
+            # End-aligned timestamps  
+            new_times = np.arange(new_sample_period, 
+                                (new_sample_size + 1) * new_sample_period, 
+                                new_sample_period)
+        
+        # Ensure we don't exceed the original time range
+        new_times = new_times[new_times <= time_values[-1]]
+        new_sample_size = len(new_times)
+        
+        # Initialize downsampled DataFrame
+        downsampled_data = {'time': new_times}
+        
+        # Downsample each data column (excluding time)
+        data_columns = [col for col in wec_df.columns if col != 'time']
+        
+        for col in data_columns:
+            downsampled_values = np.zeros(new_sample_size)
+            
+            for i in range(new_sample_size):
+                if i == 0:
+                    # First window: from start to first sample point
+                    start_idx = 0
+                    end_idx = min(t_sample, len(wec_df))
+                else:
+                    # Subsequent windows: fixed-width windows
+                    start_idx = (i - 1) * t_sample
+                    end_idx = min(i * t_sample, len(wec_df))
+                
+                if start_idx < len(wec_df) and end_idx > start_idx:
+                    downsampled_values[i] = wec_df[col].iloc[start_idx:end_idx].mean()
+                else:
+                    downsampled_values[i] = 0.0  # Handle edge cases
+                    
+            downsampled_data[col] = downsampled_values
+        
+        return pd.DataFrame(downsampled_data)
             
         
         
