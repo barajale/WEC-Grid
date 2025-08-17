@@ -79,6 +79,14 @@ class Engine:
         self.wec_sim: WECSimRunner = WECSimRunner(self.database)
         self.Sbase: Optional[float] = None
 
+#         print(r"""
+
+#  __     __     ______     ______     ______     ______     __     _____   
+# /\ \  _ \ \   /\  ___\   /\  ___\   /\  ___\   /\  == \   /\ \   /\  __-. 
+# \ \ \/ ".\ \  \ \  __\   \ \ \____  \ \ \__ \  \ \  __<   \ \ \  \ \ \/\ \
+#  \ \__/".~\_\  \ \_____\  \ \_____\  \ \_____\  \ \_\ \_\  \ \_\  \ \____-
+#   \/_/   \/_/   \/_____/   \/_____/   \/_____/   \/_/ /_/   \/_/   \/____/
+#             """)
 
     def case(self, case_file: str):
         """Load a power system case file for simulation.
