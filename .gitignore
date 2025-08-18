@@ -134,9 +134,11 @@ wec_models/LUPA/temp/*
 *.nc
 
 #ignore .mat files 
-
 *.mat
 
+# Configuration files with user-specific paths
+src/wecgrid/wec/wecsim_config.json
+src/wecgrid/database/database_config.json
 
 .*
 !/.gitignore
@@ -145,5 +147,3 @@ wec_models/LUPA/temp/*
 .*.*
 
 *.egg-info/
-
-*.json
