@@ -8,7 +8,7 @@ from pathlib import Path
 
 def iter_grid_models():
     """Yield (name, resource) for bundled RAW cases."""
-    pkg = "wecgrid.models.grid_models"
+    pkg = "wecgrid.data.grid_models"
     base = files(pkg)
     # RAW files directly under grid_models/
     for res in base.iterdir():
@@ -17,7 +17,7 @@ def iter_grid_models():
 
 def iter_wec_models():
     """Yield (name, directory resource) for bundled WEC-Sim models."""
-    pkg = "wecgrid.models.wec_models"
+    pkg = "wecgrid.data.wec_models"
     base = files(pkg)
     for res in base.iterdir():
         if res.is_dir():

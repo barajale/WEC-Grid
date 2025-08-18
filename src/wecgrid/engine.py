@@ -24,7 +24,23 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 
-#TODO figure out wec-sim source "wec_sim": "C:/Users/alexb/research/WEC-Sim",
+#TODO figure out wec-sim source "wec_sim": "C:/Users/alexb/research/WEC-Sim",y
+
+from datetime import datetime, timedelta
+from typing import List, Optional, Dict, Union
+import os
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from dataclasses import dataclass, field
+
+from wecgrid.database.wecgrid_db import WECGridDB
+from wecgrid.modelers import PSSEModeler, PyPSAModeler
+from wecgrid.plot import WECGridPlot
+from wecgrid.wec import WECFarm, WECSimRunner
+from wecgrid.util import WECGridTimeManager
+from wecgrid.util.resources import resolve_grid_case
+
 
 class Engine:
     """Main orchestrator for WEC-Grid simulations and cross-platform power system analysis.
@@ -77,7 +93,7 @@ class Engine:
         self.database = WECGridDB(self)
         self.plot = WECGridPlotter(self)
         self.wec_sim: WECSimRunner = WECSimRunner(self.database)
-        self.Sbase: Optional[float] = None
+        self.sbase: Optional[float] = None
 
 #         print(r"""
 

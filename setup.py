@@ -18,9 +18,10 @@ setup(
     include_package_data=True,  # works with MANIFEST.in
     package_data={
         "wecgrid": [
-            "models/grid_models/*",
-            "models/wec_models/**",
+            "data/grid_models/*",
+            "data/wec_models/**/*",
             "database/*",
+            "modelers/wec_sim/*.m",
         ]
     },
     install_requires=[

@@ -135,7 +135,7 @@ class WECGridDB:
             print("Warning: Database not configured. Use engine.database.set_database_path() to configure.")
             return  # Allow user to continue and set path later
         
-        print(f"Using database: {self.db_path}")
+        #print(f"Using database: {self.db_path}")
         self.check_and_initialize()
         
     def check_and_initialize(self):

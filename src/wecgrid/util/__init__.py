@@ -1,6 +1,6 @@
-# src/wecgrid/utilities/__init__.py
+# src/wecgrid/util/__init__.py
 
-from .wecgrid_timemanager import WECGridTimeManager
+from .time import WECGridTimeManager
 
 
 __all__ = ["WECGridTimeManager"]

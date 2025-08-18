@@ -2,8 +2,12 @@
 WEC-Grid plotting tools
 """
 
-from .wecgrid_plotter   import WECGridPlotter
+from .plot import WECGridPlot
+
+# Keep old name for backward compatibility
+WECGridPlotter = WECGridPlot
 
 __all__ = [
-    "WECGridPlotter"
+    "WECGridPlot",
+    "WECGridPlotter"  # Backward compatibility
 ]
