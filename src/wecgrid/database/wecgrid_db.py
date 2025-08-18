@@ -11,11 +11,56 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Optional, List
 import pandas as pd
+import json
+import requests
+import shutil
+from pathlib import Path
 
-# default location for the DB file
-_CURR_DIR = os.path.dirname(os.path.abspath(__file__))
-_DEFAULT_DB = os.path.join(_CURR_DIR, "WEC-GRID.db")
-DB_PATH = _DEFAULT_DB
+def get_database_config():
+    """Load database configuration from JSON file.
+    
+    Returns:
+        str or None: Database path if found and valid, None otherwise.
+    """
+    config_file = Path(__file__).parent / 'database_config.json'
+    
+    if config_file.exists():
+        try:
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+                db_path = config.get('database_path')
+                if db_path and os.path.exists(db_path):
+                    return str(Path(db_path).absolute())
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error reading database config: {e}")
+    
+    return None
+
+def save_database_config(db_path):
+    """Save database path to configuration file.
+    
+    Args:
+        db_path (str): Path to database file.
+    """
+    config_file = Path(__file__).parent / 'database_config.json'
+    config = {
+        "database_path": str(Path(db_path).absolute())
+    }
+    
+    with open(config_file, 'w') as f:
+        json.dump(config, f, indent=2)
+
+def _show_database_setup_message():
+    """Show simple setup message for missing database."""
+    print("\n" + "="*60)
+    print("WEC-Grid Database Setup Required")
+    print("="*60)
+    print("No database path is configured.")
+    print("\nPreloaded database can be downloaded here:")
+    print("https://github.com/acep-uaf/wecgrid-database")
+    print("\nPlease update the database path using:")
+    print('engine.database.set_database_path(r"path/to/wecgrid-database/WEC-GRID.db")')
+    print("="*60 + "\n")
 
 class WECGridDB:
     """SQLite database interface for WEC-Grid simulation data management.
@@ -52,30 +97,45 @@ class WECGridDB:
         - All grid power values in per-unit on system S_base (MVA)
         - GridState DataFrame schema alignment for direct data mapping
         - Optional storage model - persist only when explicitly requested
+        - JSON configuration file for database path management
+        - User-guided setup for first-time configuration
+        - Support for downloaded or cloned database repositories
+    
+    Database Location:
+        Configured via database_config.json in the same directory as this module.
+        Users can point to downloaded database file, cloned repository, or create new empty database.
     
     Attributes:
-        db_path (str): Path to SQLite database file.
+        db_path (str): Path to SQLite database file (from JSON configuration).
         
     Example:
-        >>> db = WECGridDB()
-        >>> db.check_and_initialize()  # Ensure schema exists
+        >>> db = WECGridDB(engine)  # Uses path from database_config.json
+        >>> # First run will prompt user to configure database path
         >>> with db.connection() as conn:
         ...     results = db.query("SELECT * FROM grid_simulations", return_type="df")
     
     Notes:
-        Default SQLite3 Database is stored in src/wecgrid/database/WEC-Grid.db
-        Database is automatically initialized on first use if not present.
+        Database path is configured via JSON file on first use.
+        Users are guided through setup process with clear instructions.
+        All database operations are transaction-safe with automatic rollback on errors.
     """
     
-    def __init__(self, engine, db_path: Optional[str] = None):
+    def __init__(self, engine):
         """Initialize database handler.
         
         Args:
-            db_path (str, optional): Path to SQLite database file. Defaults
-                to package database location if None.
+            engine: WEC-GRID engine instance
         """
         self.engine = engine
-        self.db_path = db_path or _DEFAULT_DB
+        
+        # Get database path from config
+        self.db_path = get_database_config()
+        if self.db_path is None:
+            _show_database_setup_message()
+            print("Warning: Database not configured. Use engine.database.set_database_path() to configure.")
+            return  # Allow user to continue and set path later
+        
+        print(f"Using database: {self.db_path}")
         self.check_and_initialize()
         
     def check_and_initialize(self):
@@ -87,8 +147,14 @@ class WECGridDB:
         Returns:
             bool: True if database was already valid, False if initialization was needed.
         """
+        if self.db_path is None:
+            print("Warning: Database path not set. Cannot initialize database.")
+            return False
+            
         if not os.path.exists(self.db_path):
-            print(f"Database not found at {self.db_path}. Creating new database...")
+            print(f"Database not found. Creating new database at {self.db_path}...")
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
             self.initialize_database()
             return False
             
@@ -150,6 +216,11 @@ class WECGridDB:
         rollback on exceptions. Connection closed automatically.
             
         """
+        if self.db_path is None:
+            raise ValueError(
+                "Database path not configured. Please use engine.database.set_database_path() to configure."
+            )
+            
         conn = sqlite3.connect(self.db_path)
         try:
             yield conn
@@ -904,3 +975,27 @@ class WECGridDB:
             FROM wec_simulations 
             ORDER BY created_at DESC
         """, return_type="df")
+    
+    def set_database_path(self, db_path):
+        """Set database path and reinitialize connection.
+        
+        Args:
+            db_path (str): Path to WEC-GRID database file.
+            
+        Example:
+            >>> engine.database.set_database_path("/path/to/wecgrid-database/WEC-GRID.db")
+        """
+        if not os.path.exists(db_path):
+            raise FileNotFoundError(f"Database file not found: {db_path}")
+        
+        # Save to config
+        save_database_config(db_path)
+        
+        # Update current instance
+        self.db_path = str(Path(db_path).absolute())
+        print(f"Database path updated: {self.db_path}")
+        
+        # Reinitialize
+        self.check_and_initialize()
+        
+        return self.db_path

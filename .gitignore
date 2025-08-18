@@ -146,3 +146,4 @@ wec_models/LUPA/temp/*
 
 *.egg-info/
 
+*.json
