@@ -1,3 +1,2 @@
-data/WECGrid.db filter=lfs diff=lfs merge=lfs -text
-data/*.db filter=lfs diff=lfs merge=lfs -text
+examples/WECGrid.db filter=lfs diff=lfs merge=lfs -text
 examples/*.db filter=lfs diff=lfs merge=lfs -text
