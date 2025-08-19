@@ -10,20 +10,6 @@ def test_pypsa():
     import pypsa
     assert pypsa is not None
     
-def test_psse():
-    """Test PSS®E modules can be imported."""
-    import pssepath
-    pssepath.add_pssepath()
-    import psspy
-    import psse35
-    assert psspy is not None
-    assert psse35 is not None
-
-def test_matlab():
-    """Test MATLAB modules can be imported."""
-    import matlab.engine
-    assert matlab.engine is not None
-
 def test_wecgrid_database():
     """Test database module can be imported."""
     from wecgrid.util.database import WECGridDB
