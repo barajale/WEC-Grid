@@ -22,7 +22,7 @@ class WECGridTimeManager:
     Attributes:
         start_time (datetime): Simulation start timestamp. Defaults to current 
             date at midnight.
-        sim_length (int): Number of simulation time steps. Defaults to 288
+        num_steps (int): Number of simulation time steps. Defaults to 288
             (24 hours at 5-minute intervals).
         freq (str): Pandas frequency string for time intervals. Defaults to "5T"
             (5-minute intervals).
@@ -34,7 +34,7 @@ class WECGridTimeManager:
     Example:
         >>> # Default 24-hour simulation at 5-minute intervals
         >>> time_mgr = WECGridTimeManager()
-        >>> print(f"Duration: {time_mgr.sim_length} steps")
+        >>> print(f"Duration: {time_mgr.num_steps} steps")
         >>> print(f"Interval: {time_mgr.freq}")
         Duration: 288 steps
         Interval: 5T
@@ -49,7 +49,8 @@ class WECGridTimeManager:
         >>> print(f"Start: {time_mgr.start_time}")
     """
     start_time: datetime = field(default_factory=lambda: datetime.now().replace(hour=0, minute=0, second=0, microsecond=0))
-    sim_length: int = 288
+    #sim_length: int = 288
+    num_steps: int = 288
     freq: str = "5T"
     delta_time: int = 300  # seconds
 
@@ -59,7 +60,7 @@ class WECGridTimeManager:
 
     def _update_sim_stop(self):
         """Update simulation stop time based on current parameters."""
-        self.sim_stop = self.snapshots[-1] if self.sim_length > 0 else self.start_time
+        self.sim_stop = self.snapshots[-1] if self.num_steps > 0 else self.start_time
 
     @property
     def snapshots(self) -> pd.DatetimeIndex:
@@ -70,22 +71,22 @@ class WECGridTimeManager:
         """
         return pd.date_range(
             start=self.start_time,
-            periods=self.sim_length,
+            periods=self.num_steps,
             freq=self.freq,
         )
 
-    def update(self, *, start_time: datetime = None, sim_length: int = None, freq: str = None):
+    def update(self, *, start_time: datetime = None, num_steps: int = None, freq: str = None):
         """Update simulation time parameters with automatic recalculation.
         
         Args:
             start_time (datetime, optional): New simulation start timestamp.
-            sim_length (int, optional): New number of simulation time steps.
+            num_steps (int, optional): New number of simulation time steps.
             freq (str, optional): New pandas frequency string for time intervals.
         """
         if start_time is not None:
             self.start_time = start_time
-        if sim_length is not None:
-            self.sim_length = sim_length
+        if num_steps is not None:
+            self.num_steps = num_steps
         if freq is not None:
             self.freq = freq
         self._update_sim_stop()
@@ -100,7 +101,7 @@ class WECGridTimeManager:
         Raises:
             ValueError: If end_time is earlier than or equal to start_time.
         """
-        self.sim_length = len(pd.date_range(start=self.start_time, end=end_time, freq=self.freq))
+        self.num_steps = len(pd.date_range(start=self.start_time, end=end_time, freq=self.freq))
         self.sim_stop = end_time
 
     def __repr__(self) -> str:
@@ -109,6 +110,6 @@ class WECGridTimeManager:
             f"WECGridTimeManager:\n"
             f"├─ start_time: {self.start_time}\n"
             f"├─ sim_stop:   {self.sim_stop}\n"
-            f"├─ sim_length: {self.sim_length} steps\n"
+            f"├─ num_steps: {self.num_steps} steps\n"
             f"└─ frequency:  {self.freq}"
         )

@@ -122,10 +122,7 @@ class WECGridPlot:
         
         data = getattr(component_data, parameter)
         
-        # Debug: Show actual column names in time-series data
-        print(f"Time-series data columns for {component_type}.{parameter}: {list(data.columns)}")
-        print(f"Time-series data shape: {data.shape}")
-        
+
         # Resolve component selection based on names and/or bus filtering
         selected_components = self._resolve_component_selection(
             grid_obj, component_type, component_name, bus
@@ -151,18 +148,18 @@ class WECGridPlot:
                 print(f"Found: {valid_components}")
             
             data = data[valid_components]
-            print(f"Plotting {len(valid_components)} selected components: {valid_components}")
-        else:
-            print(f"Plotting all {len(data.columns)} components")
+        #     #print(f"Plotting {len(valid_components)} selected components: {valid_components}")
+        # else:
+        #     #print(f"Plotting all {len(data.columns)} components")
         
         # Add data summary
         if isinstance(data, pd.DataFrame):
-            print(f"Plotting {len(data.columns)} components over {len(data)} time steps")
+            #print(f"Plotting {len(data.columns)} components over {len(data)} time steps")
             if data.empty:
                 print("Warning: No data to plot")
                 return None, None
-        else:
-            print(f"Plotting single component over {len(data)} time steps")
+        # else:
+        #     print(f"Plotting single component over {len(data)} time steps")
         
         # Create the plot
         fig, ax = plt.subplots(figsize=figsize)
@@ -216,7 +213,7 @@ class WECGridPlot:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             print(f"Figure saved to: {save_path}")
         
-        plt.show()
+        #plt.show()
         
         return fig, ax
 
@@ -329,7 +326,7 @@ class WECGridPlot:
         print(f"Final component selection for {component_type}: {selected_components}")
         return selected_components if selected_components else []
 
-    def generator(self, software, parameter='p', bus=None, component_name=None, **kwargs):
+    def gen(self, software='pypsa', parameter='p', bus=None, component_name=None, **kwargs):
         """Plot generator time-series data.
         
         Convenience method for plotting generator parameters using the main
@@ -356,7 +353,7 @@ class WECGridPlot:
         """
         return self.plot_component_data(software, 'gen', parameter, component_name=component_name, bus=bus, **kwargs)
 
-    def bus(self, software, parameter='p', bus=None, **kwargs):
+    def bus(self, software='pypsa', parameter='p', bus=None, **kwargs):
         """Plot bus time-series data.
         
         Convenience method for plotting bus parameters using the main
@@ -381,7 +378,7 @@ class WECGridPlot:
         """
         return self.plot_component_data(software, 'bus', parameter, component_name=None, bus=bus, **kwargs)
 
-    def line(self, software, parameter='line_pct', bus=None, component_name=None,  **kwargs):
+    def line(self, software='pypsa', parameter='line_pct', bus=None, component_name=None,  **kwargs):
         """Plot transmission line time-series data.
         
         Convenience method for plotting line parameters using the main
@@ -406,7 +403,7 @@ class WECGridPlot:
         """
         return self.plot_component_data(software, 'line', parameter, component_name=component_name, bus=bus, **kwargs)
 
-    def load(self, software, parameter='p', bus = None, component_name=None, **kwargs):
+    def load(self, software='pypsa', parameter='p', bus = None, component_name=None, **kwargs):
         """Plot load time-series data.
         
         Convenience method for plotting load parameters using the main
@@ -510,11 +507,11 @@ class WECGridPlot:
         
         fig.suptitle(f"{component_type.upper()} Parameters - {software.upper()}", fontsize=16, fontweight='bold')
         plt.tight_layout()
-        plt.show()
+        #plt.show()
         return fig, axes
 
 
-    def plot_wec_analysis(self, software="pypsa", figsize=(12, 15)):
+    def plot_wec_analysis(self, software="pypsa", figsize=(12, 15), show=True):
         """Generate comprehensive WEC farm analysis plots.
         
         Creates a specialized three-panel analysis plot focusing on Wave Energy Converter
@@ -522,8 +519,9 @@ class WECGridPlot:
         publication-quality visualizations for WEC integration studies.
         
         Args:
-            software (str, optional): Backend software to use. Defaults to "psse".
+            software (str, optional): Backend software to use. Defaults to "pypsa".
             figsize (tuple, optional): Figure size (width, height). Defaults to (12, 15).
+            show (bool, optional): Whether to display the plot. Defaults to True.
         
         Returns:
             tuple: (fig, axes) matplotlib figure and axes array, or (None, None)
@@ -548,8 +546,8 @@ class WECGridPlot:
             >>> fig, axes = plotter.plot_wec_analysis("pypsa", figsize=(10, 12))
             
         Notes:
-            - Automatically detects WEC farms from engine.wec_farms
-            - Uses farm names for clear identification in legends
+            - Uses GridState data to find generators at WEC farm bus locations
+            - Identifies WEC generators by bus_location from farm data
             - Calculates meaningful metrics like contribution percentages
             - Handles missing data gracefully with informative error messages
             - Provides console output showing detected WEC farms
@@ -557,116 +555,105 @@ class WECGridPlot:
             
         WEC Farm Requirements:
             Each WEC farm object must have:
-            - id: Unique identifier for the farm
             - bus_location: Bus number where farm is connected
-            - farm_name: Human-readable farm name for plots
+            - farm_name: Human-readable farm name for plots (if available)
         """
         if not hasattr(self.engine, 'wec_farms') or not self.engine.wec_farms:
             print("No WEC farms found in engine")
             return None, None
         
-        # Create a figure with 3 subplots (3x1 grid)
-        fig, axes = plt.subplots(3, 1, figsize=figsize)
-        
         try:
-            # Get grid data
-            grid_obj = getattr(self.engine, software).grid
-            gen_data = getattr(grid_obj, 'gen_t')
-            bus_data = getattr(grid_obj, 'bus_t')
+            # Get GridState data 
+            grid_state = getattr(self.engine, software).grid
+            gen_data = getattr(grid_state, 'gen_t')
+            bus_data = getattr(grid_state, 'bus_t')
             
-            # Collect WEC farm information
-            wec_farm_info = []
-            for farm in self.engine.wec_farms:
-                if hasattr(farm, 'id') and hasattr(farm, 'bus_location') and hasattr(farm, 'farm_name'):
-                    wec_gen_name = f"{farm.bus_location}_{farm.id}"
-                    wec_farm_info.append({
-                        'gen_name': wec_gen_name,
-                        'bus_location': farm.bus_location,
-                        'farm_name': farm.farm_name
-                    })
-            
-            print(f"Found {len(wec_farm_info)} WEC farms:")
-            for info in wec_farm_info:
-                print(f"  - {info['farm_name']}: {info['gen_name']} at bus {info['bus_location']}")
-            
-            # Plot 1: WEC-Farm Active Power Output
-            p_data = getattr(gen_data, 'p')
-            wec_generators = [info['gen_name'] for info in wec_farm_info]
-            available_wec_gens = [gen for gen in wec_generators if gen in p_data.columns]
-            
-            if available_wec_gens:
-                wec_p_data = p_data[available_wec_gens]
+            if not hasattr(grid_state, 'time_series') or grid_state.time_series.empty:
+                print("No time series data found in GridState")
+                return None, None
+ 
+
+            for farm in self.engine.wec_farm:
+                fig, axes = plt.subplots(3, 1, figsize=figsize)
                 
-                # Create labels using farm names
-                plot_data = wec_p_data.copy()
-                # Rename columns to use farm names instead of generator IDs
-                column_mapping = {}
-                for info in wec_farm_info:
-                    if info['gen_name'] in plot_data.columns:
-                        column_mapping[info['gen_name']] = info['farm_name']
-                plot_data.rename(columns=column_mapping, inplace=True)
+                p_data = getattr(gen_data, 'p')
+                gen_data = getattr(p_data, ) # generator name 'G0'..'G6'
                 
-                plot_data.plot(ax=axes[0], linewidth=2, title="WEC-Farm Active Power Output")
+                # Plot WEC power data
+                wec_df = pd.DataFrame(gen_data)
+                wec_df.plot(ax=axes[0], linewidth=2)
+                axes[0].set_title("WEC-Farm Active Power Output")
                 axes[0].set_ylabel("Active Power (MW)")
                 axes[0].grid(True, alpha=0.3)
-                if len(available_wec_gens) > 1:
+                if len(gen_data) > 1:
                     axes[0].legend(loc='upper right')
-            else:
-                axes[0].text(0.5, 0.5, "No WEC farm generators\nfound in data", 
-                            ha='center', va='center', transform=axes[0].transAxes)
-                axes[0].set_title("WEC-Farm Active Power Output")
+                    
+            # # Plot 2: WEC Contribution Percentage over Time
+            # if wec_power_data:
+            #     wec_df = pd.DataFrame(wec_power_data)
+            #     total_wec_power = wec_df.sum(axis=1)
                 
-            # Plot 2: WEC Contribution Percentage over Time
-            if available_wec_gens:
-                wec_p_data = p_data[available_wec_gens]
-                total_wec_power = wec_p_data.sum(axis=1)
-                total_gen_power = p_data.sum(axis=1)
-                
-                # Calculate WEC percentage of total generation
-                wec_percentage = (total_wec_power / total_gen_power) * 100
-                
-                axes[1].plot(wec_percentage.index, wec_percentage.values, 
-                            label="WEC Contribution %", linewidth=2, color='green')
-                axes[1].set_title("WEC-Farm Contribution to Total Generation (%)")
-                axes[1].set_ylabel("Percentage (%)")
-                axes[1].legend()
-                axes[1].grid(True, alpha=0.3)
-                
-                # Plot 3: WEC-Farm Bus Voltage
-                v_data = getattr(bus_data, 'v_mag')
-                wec_buses = [info['bus_location'] for info in wec_farm_info]
-                available_wec_buses = [bus for bus in wec_buses if bus in v_data.columns]
+            #     # Calculate total generation from all gen_p_* columns
+            #     all_gen_cols = [col for col in ts_data.columns if col.startswith('gen_p_')]
+            #     if all_gen_cols:
+            #         total_gen_power = ts_data[all_gen_cols].sum(axis=1)
+            #         wec_percentage = (total_wec_power / total_gen_power) * 100
+                    
+            #         axes[1].plot(wec_percentage.index, wec_percentage.values, 
+            #                     label="WEC Contribution %", linewidth=2, color='green')
+            #         axes[1].set_title("WEC-Farm Contribution to Total Generation (%)")
+            #         axes[1].set_ylabel("Percentage (%)")
+            #         axes[1].legend()
+            #         axes[1].grid(True, alpha=0.3)
+            #     else:
+            #         axes[1].text(0.5, 0.5, "No total generation\ndata for comparison", 
+            #                     ha='center', va='center', transform=axes[1].transAxes)
+            #         axes[1].set_title("WEC-Farm Contribution to Total Generation (%)")
+            # else:
+            #     axes[1].text(0.5, 0.5, "No WEC power data\nfor percentage calculation", 
+            #                 ha='center', va='center', transform=axes[1].transAxes)
+            #     axes[1].set_title("WEC-Farm Contribution to Total Generation (%)")
             
-            # Plot 3: WEC-Farm Bus Voltage
-            v_data = getattr(bus_data, 'v_mag')
-            wec_buses = [info['bus_location'] for info in wec_farm_info]
-            available_wec_buses = [bus for bus in wec_buses if bus in v_data.columns]
+            # # Plot 3: WEC-Farm Bus Voltage
+            # wec_buses = list(set(info['bus_location'] for info in wec_farm_info))
+            # wec_voltage_data = {}
             
-            if available_wec_buses:
-                wec_bus_v_data = v_data[available_wec_buses]
-                
-                # Create labels using farm names and bus numbers
-                plot_data = wec_bus_v_data.copy()
-                column_mapping = {}
-                for info in wec_farm_info:
-                    if info['bus_location'] in plot_data.columns:
-                        column_mapping[info['bus_location']] = f"{info['farm_name']} (Bus {info['bus_location']})"
-                plot_data.rename(columns=column_mapping, inplace=True)
-                
-                plot_data.plot(ax=axes[2], linewidth=2, title="WEC-Farm Bus Voltage")
-                axes[2].set_ylabel("Voltage (p.u.)")
-                axes[2].grid(True, alpha=0.3)
-                if len(available_wec_buses) > 1:
-                    axes[2].legend(loc='upper right')
-            else:
-                axes[2].text(0.5, 0.5, f"WEC farm buses\n{wec_buses}\nnot found in voltage data", 
-                            ha='center', va='center', transform=axes[2].transAxes)
-                axes[2].set_title("WEC-Farm Bus Voltage")
+            # # Find bus voltage columns (look for bus_v_* patterns)
+            # for col in ts_data.columns:
+            #     if col.startswith('bus_v_'):
+            #         bus_name = col.replace('bus_v_', '')
+            #         # Try to match bus numbers
+            #         try:
+            #             bus_num = int(bus_name)
+            #             if bus_num in wec_buses:
+            #                 # Find corresponding farm name for this bus
+            #                 farm_names = [info['farm_name'] for info in wec_farm_info 
+            #                             if info['bus_location'] == bus_num]
+            #                 if farm_names:
+            #                     label = f"{farm_names[0]} (Bus {bus_num})"
+            #                     wec_voltage_data[label] = ts_data[col]
+            #         except ValueError:
+            #             # Handle non-numeric bus names
+            #             continue
             
-            # Set overall title and adjust layout
-            fig.suptitle(f"WEC Farm Analysis - {software.upper()}", fontsize=16, fontweight='bold')
-            plt.tight_layout()
-            plt.show()
+            # if wec_voltage_data:
+            #     voltage_df = pd.DataFrame(wec_voltage_data)
+            #     voltage_df.plot(ax=axes[2], linewidth=2)
+            #     axes[2].set_title("WEC-Farm Bus Voltage")
+            #     axes[2].set_ylabel("Voltage (p.u.)")
+            #     axes[2].grid(True, alpha=0.3)
+            #     if len(wec_voltage_data) > 1:
+            #         axes[2].legend(loc='upper right')
+            # else:
+            #     axes[2].text(0.5, 0.5, f"WEC farm bus voltage data\nnot found for buses {wec_buses}", 
+            #                 ha='center', va='center', transform=axes[2].transAxes)
+            #     axes[2].set_title("WEC-Farm Bus Voltage")
+            
+            # # Set overall title and adjust layout
+            # fig.suptitle(f"WEC Farm Analysis - {software.upper()}", fontsize=16, fontweight='bold')
+            # plt.tight_layout()
+            # if show:
+            #     plt.show()
             
         except Exception as e:
             print(f"Error in WEC analysis: {e}")
@@ -678,7 +665,8 @@ class WECGridPlot:
             axes[0].set_title("WEC Farm Analysis - Error")
             for i in range(1, 3):
                 axes[i].text(0.5, 0.5, "Error occurred", ha='center', va='center', transform=axes[i].transAxes)
-            plt.show()
+            if show:
+                plt.show()
         
         return fig, axes
 
@@ -1121,11 +1109,11 @@ class WECGridPlot:
                     fontsize=14, fontweight='bold')
         
         plt.tight_layout()
-        plt.show()
+        #plt.show()
         
         return fig, (ax1, ax2)
 
-    def sld(self, software: str, figsize=(14, 10), title=None, save_path=None, show=False):
+    def sld(self, software: str = 'pypsa', figsize=(14, 10), title=None, save_path=None, show=False):
         """Generate single-line diagram using GridState data.
         
         Creates a single-line diagram visualization using the standardized GridState

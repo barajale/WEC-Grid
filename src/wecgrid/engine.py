@@ -209,13 +209,14 @@ class Engine:
         """
         wec_farm: WECFarm = WECFarm(
             farm_name=farm_name,
+            farm_id = len(self.wec_farms) + 1,  # Unique farm_id for each farm,
+            gen_name = "" 
             database=self.database,
             time=self.time,
             wec_sim_id= wec_sim_id,
             bus_location=bus_location, 
             connecting_bus=connecting_bus,
             size=size,
-            gen_id= len(self.wec_farms) + 1,  # Unique gen_id for each farm,
             sbase = self.sbase,
             scaling_factor = scaling_factor
             #TODO potenital issue where PSSE is using gen_id as the gen identifer and that's limited to 2 chars. so hard cap at 9 farms in this code rn
@@ -226,6 +227,7 @@ class Engine:
         for modeler in [self.psse, self.pypsa]:
                 if modeler is not None:
                     modeler.add_wec_farm(wec_farm)
+                    wec_farm.gen_name = modeler.grid.
 
 
     def generate_load_curves(
@@ -297,9 +299,9 @@ class Engine:
                 )
             elif self.pypsa is not None:
                 base_load = (
-                    self.pypsa.network.loads[["bus", "p"]]
-                    .groupby("bus")["p"]
-                    .sum()
+                    self.pypsa.grid.load[["bus", "p"]]
+                    .drop_duplicates("bus")
+                    .set_index("bus")["p"]
                 )
             else:
                 raise ValueError("No valid base load could be extracted from modelers.")
@@ -342,14 +344,13 @@ class Engine:
 
     def simulate(
         self,
-        sim_length: Optional[int] = None,
+        num_steps: Optional[int] = None,
         load_curve: bool = False,
-        plot: bool = True
     ) -> None:
         """Execute time-series power system simulation across loaded backends.
         
         Args:
-            sim_length (int, optional): Number of simulation time steps. If None,
+            time_steps (int, optional): Number of simulation time steps. If None,
                 uses full available data length. Constrained by WEC data if present.
             load_curve (bool, optional): Enable time-varying load profiles. Defaults to False.
             plot (bool, optional): Reserved for future automatic plotting. Defaults to True.
@@ -380,21 +381,21 @@ class Engine:
         if self.wec_farms:
             available_len = len(self.wec_farms[0].wec_devices[0].dataframe)
 
-            if sim_length is not None:
-                if sim_length > available_len:
-                    print(f"[WARNING] Requested sim_length={sim_length} exceeds "
-                        f"WEC data length={available_len}. Truncating to {available_len}.")
-                final_len = min(sim_length, available_len)
+            if num_steps is not None:
+                if num_steps > available_len:
+                    print(f"[WARNING] Requested num_steps={num_steps} exceeds "
+                          f"WEC data length={available_len}. Truncating to {available_len}.")
+                final_len = min(num_steps, available_len)
             else:
                 final_len = available_len
 
             if final_len != self.time.snapshots.shape[0]:
-                self.time.update(sim_length=final_len)
+                self.time.update(num_steps=final_len)
 
         else:
-            # No WEC farm — just update if sim_length is given
-            if sim_length is not None:
-                self.time.update(sim_length=sim_length)
+            # No WEC farm — just update if num_steps is given
+            if num_steps is not None:
+                self.time.update(num_steps=num_steps)
 
         load_curve_df = self.generate_load_curves(amplitude=0.10) if load_curve else None
 

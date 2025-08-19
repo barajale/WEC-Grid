@@ -57,7 +57,7 @@ class WECFarm:
         - Add heterogeneous device support for different models
         - Implement smart farm control and optimization
     """
-    def __init__(self, farm_name: str, database, time: Any, wec_sim_id: int, bus_location: int, connecting_bus: int = 1, size: int = 1, gen_id: str = None, sbase: float = 100.0, scaling_factor: float = 1.0):
+    def __init__(self, farm_name: str, database, time: Any, wec_sim_id: int, bus_location: int, connecting_bus: int = 1, size: int = 1, farm_id: int = None, sbase: float = 100.0, scaling_factor: float = 1.0):
         """Initialize WEC farm with specified configuration.
         
         Args:
@@ -99,7 +99,7 @@ class WECFarm:
         self.model: str = ""
         self.bus_location: int = bus_location
         self.connecting_bus: int = connecting_bus # todo this should default to swing bus
-        self.id: str = gen_id
+        self.farm_id: int = farm_id
         self.size: int = size
         self.config: Dict = None
         self.wec_devices: List[WECDevice] = []
