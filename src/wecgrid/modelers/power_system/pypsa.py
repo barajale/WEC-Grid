@@ -491,6 +491,8 @@ class PyPSAModeler(PowerSystemModeler):
             self.grid.software = "pypsa"
             self.solve_powerflow()
             self.take_snapshot(timestamp=self.engine.time.start_time)  # Update grid state
+        
+            
             return True
         except Exception as e:
             print(f"[PyPSA ERROR]: Failed to add WEC Components: {e}")

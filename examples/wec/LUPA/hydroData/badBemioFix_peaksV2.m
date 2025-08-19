@@ -50,7 +50,7 @@ hydro = radiationIRFSS(hydro,10,[]);
 hydro = excitationIRF(hydro,10,[],[],[],[]);
 writeBEMIOH5(hydro);
 % hydro.plotDofs = [1,1;3,3;5,5;7,7;3,7;7,3];
-plotBEMIO(hydro);
+%plotBEMIO(hydro);
 
 %% filtering parameters
 %%% recommend using the filter design application

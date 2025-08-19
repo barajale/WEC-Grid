@@ -308,11 +308,11 @@ class PSSEModeler(PowerSystemModeler):
         # Step 3: Add generator
         ierr = self.psspy.machine_data_4(
             ibus=farm.bus_location, 
-            id=f"W{farm.id}",
+            id=f"W{farm.farm_id}",
             realar1=0.0, # PG, machine active power (0.0 by default)
         )
         if ierr > 0:
-            print(f"Error adding generator {farm.id} to bus {farm.bus_location}. PSS®E error code: {ierr}")
+            print(f"Error adding generator {farm.farm_id} to bus {farm.bus_location}. PSS®E error code: {ierr}")
             return False
 
         # Step 4: Add a branch (line) connecting the existing bus to the new bus
@@ -375,7 +375,7 @@ class PSSEModeler(PowerSystemModeler):
                 power = farm.power_at_snapshot(snapshot) # pu sbase
                 ierr = self.psspy.machine_chng_4(
                         ibus=farm.bus_location, 
-                        id=f"W{farm.id}", 
+                        id=f"W{farm.farm_id}", 
                         realar=[power * self.sbase] + [self._f]*16) > 0
                 if ierr > 0: 
                     raise Exception(f"Error setting generator power at snapshot {snapshot}")

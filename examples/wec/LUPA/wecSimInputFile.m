@@ -17,25 +17,48 @@ waves.height = waveHeight;
 waves.period = wavePeriod;
 waves.spectrumType = spectrumType;
 waves.phaseSeed = waveSeed;
+
+% %% Body Data
+% %% Body 1: Float
+% body(1) = bodyClass('./hydroData/floatspar_D1_14m_d2_78m.h5');
+% body(1).geometryFile = './geometry/LUPA_Fall2022_float_geometry.stl';
+% body(1).mass = 'equilibrium';
+% body(1).viz.color = [255/256 127/256 36/256];
+% body(1).inertia = [64.60 65.06 17.83];                      % [kg-m^2] As measured from dry swing tests
+% body(1).quadDrag.cd = [0.54 0.54 0.15 0.54 0.54 0.15];          % [-] Quadratic drag coefficient Cd as found from Gu et al 2018
+% body(1).quadDrag.area = [0.368 0.368 0.785 0.368 0.368 0.785];  % [m^2] Characteristic area in relevant plane
+
+% %% Body 2: Spar
+% body(2) = bodyClass('./hydroData/floatspar_D1_14m_d2_78m.h5');
+% body(2).geometryFile = './geometry/LUPA_spar_D1_14m_full.stl';
+% body(2).mass = 202.21;                                             % [kg] Positively bouyant spar.
+% body(2).viz.color = [211/256 211/256 211/256];
+% body(2).inertia = [304.786 305.250 15.775];                      % [kg-m^2] As measured from dry swing tests
+% body(2).quadDrag.cd = [0.6 0.6 2.8 0.6 0.6 2.8];                    % [-] Quadratic drag coefficient Cd as found from Beatty 2015 and Singh & Mittal 2005
+% body(2).quadDrag.area = [0.558 0.558 0.636 0.558 0.558 0.636];      % [m^2] Characteristic area in relevant plane
+% body(2).setInitDisp([0 0 0],[0 0 0 0],[0 0 -0.22]);                 % [m] Initial Displacement  Set to engage mooring lines for pre-tension.
+
+
+
 %% Body Data
 %% Body 1: Float
-body(1) = bodyClass('./hydroData/floatspar_D1_14m_d2_78m.h5');
-body(1).geometryFile = './geometry/LUPA_Fall2022_float_geometry.stl';
+body(1) = bodyClass('.\hydroData\floatspar_20m.h5');
+body(1).geometryFile = '.\geometry\LUPA_float_20m.stl';
 body(1).mass = 'equilibrium';
 body(1).viz.color = [255/256 127/256 36/256];
-body(1).inertia = [64.60 65.06 17.83];                      % [kg-m^2] As measured from dry swing tests
-body(1).quadDrag.cd = [0.54 0.54 0.15 0.54 0.54 0.15];          % [-] Quadratic drag coefficient Cd as found from Gu et al 2018
-body(1).quadDrag.area = [0.368 0.368 0.785 0.368 0.368 0.785];  % [m^2] Characteristic area in relevant plane
+body(1).inertia = [206720000 208192000 57056000];       % [kg-m^2] scaled 20x from Lab-scale measured dry swing tests
+body(1).quadDrag.cd = [0.54 0.54 0.15 0.54 0.54 0.15];  % [-] Quadratic drag coefficient Cd as found from Gu et al 2018
+body(1).quadDrag.area = [73 73 314.16 73 73 314.16];    % [m^2] Characteristic area in relevant plane 
 
 %% Body 2: Spar
-body(2) = bodyClass('./hydroData/floatspar_D1_14m_d2_78m.h5');
-body(2).geometryFile = './geometry/LUPA_spar_D1_14m_full.stl';
-body(2).mass = 202.21;                                             % [kg] Positively bouyant spar.
+body(2) = bodyClass('.\hydroData\floatspar_20m.h5');
+body(2).geometryFile = '.\geometry\LUPA_spar_20m_full.stl';
+body(2).mass = 1617680;   %'equilibrium';                        % [kg] Positively bouyant spar. Scaled 20x
 body(2).viz.color = [211/256 211/256 211/256];
-body(2).inertia = [304.786 305.250 15.775];                      % [kg-m^2] As measured from dry swing tests
-body(2).quadDrag.cd = [0.6 0.6 2.8 0.6 0.6 2.8];                    % [-] Quadratic drag coefficient Cd as found from Beatty 2015 and Singh & Mittal 2005
-body(2).quadDrag.area = [0.558 0.558 0.636 0.558 0.558 0.636];      % [m^2] Characteristic area in relevant plane
-body(2).setInitDisp([0 0 0],[0 0 0 0],[0 0 -0.22]);                 % [m] Initial Displacement  Set to engage mooring lines for pre-tension.
+body(2).inertia = [975315200 976800000 50480000];                % [kg-m^2] scaled 20x from Lab-scale measured dry swing tests
+body(2).quadDrag.cd = [0.6 0.6 2.8 0.6 0.6 2.8];                 % [-] Quadratic drag coefficient Cd as found from Beatty 2015 and Singh & Mittal 2005
+body(2).quadDrag.area = [103.78 103.78 130 103.78 103.78 130];   % [m^2] Characteristic area in relevant plane
+body(2).setInitDisp([0 0 0],[0 0 0 0],[0 0 -0.6]);               % [m] Initial Displacement  Set to engage mooring lines for pre-tension.
 
 
 %% PTO and Constraint Parameters
@@ -48,6 +71,26 @@ pto(1) = ptoClass('PTO1');           	% Initialize PTO Class for PTO1
 pto(1).stiffness = 0;                           % PTO Stiffness [N/m]
 pto(1).damping = 0;                           % PTO Damping [N/(m/s)]
 pto(1).location = [0 0 0];                   % PTO Location [m]
+
+
+
+
+
+%% Mooring Matrix
+
+R = 6.5;                                   % [m] Radius of mooring plate scaled 10x
+mooring(1) = mooringClass('mooring');       % Initialize mooringClass
+
+%%This is the combined equivalent stiffness of all 4 springs as calculated
+%%from their equilbrium location and angle. Scaled up 20x from lab-scale
+mooring(1).matrix.stiffness(1,1) = 1145600;   % [N/m]
+mooring(1).matrix.stiffness(2,2) = 1145600;   % [N/m]
+mooring(1).matrix.stiffness(3,3) = 224800;   % [N/m] 
+mooring(1).matrix.stiffness(4,4) = 32712000*R;   % [N/deg] Assumming small angle approximations acting axially
+mooring(1).matrix.stiffness(5,5) = 32712000*R;   % [N/deg] Assumming small angle approximations acting axially
+mooring(1).matrix.stiffness(6,6) = 32712000*R;   % [N/deg] Assumming small angle approximations acting axially
+mooring(1).location = [0 0 -14.4-0.6];      % [m] Distance in meters from the still water line down to the mooring connection point when the spar is initially displaced.
+
 
 
 

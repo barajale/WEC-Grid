@@ -227,7 +227,7 @@ class Engine:
         for modeler in [self.psse, self.pypsa]:
                 if modeler is not None:
                     modeler.add_wec_farm(wec_farm)
-                    wec_farm.gen_name = modeler.grid.gen.loc[modeler.grid.gen.bus == bus_location].gen_name[0]
+                    wec_farm.gen_name = modeler.grid.gen.loc[modeler.grid.gen.bus == wec_farm.bus_location, 'gen_name'].iloc[0] if (modeler.grid.gen.bus == wec_farm.bus_location).any() else None
 
 
     def generate_load_curves(
