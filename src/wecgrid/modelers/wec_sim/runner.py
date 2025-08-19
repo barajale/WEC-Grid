@@ -10,7 +10,6 @@ import random
 import json
 import io
 
-import matlab.engine
 import matplotlib.pyplot as plt
 from typing import Optional
 from wecgrid.util import WECGridDB
@@ -35,7 +34,6 @@ class WECSimRunner:
         """Initialize WEC-Sim runner with database connection."""
         self.wec_sim_path: Optional[str] = None
         self.database: WECGridDB = database
-        self.matlab_engine: Optional[matlab.engine.MatlabEngine] = None
         self._load_config()
     
     def _load_config(self) -> None:
@@ -78,6 +76,16 @@ class WECSimRunner:
         
     def start_matlab(self) -> bool:
         """Initialize MATLAB engine and configure WEC-Sim framework paths."""
+        
+        try:
+            import matlab.engine
+        except ImportError:
+            print("MATLAB python API not installed. ")
+            print("https://www.mathworks.com/help/matlab/matlab_external/install-the-matlab-engine-for-python.html")
+            return False
+        self.matlab_engine: Optional[matlab.engine.MatlabEngine] = None
+        
+        
         if self.matlab_engine is None:
             print(f"Starting MATLAB Engine... ", end='')
             self.matlab_engine = matlab.engine.start_matlab()

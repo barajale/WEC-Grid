@@ -89,7 +89,7 @@ class Engine:
         self.wec_farms: List[WECFarm] = []
         self.database = WECGridDB(self)
         self.plot = WECGridPlotter(self)
-        self.wec_sim: WECSimRunner = WECSimRunner(self.database)
+        self.wecsim: WECSimRunner = WECSimRunner(self.database)
         self.sbase: Optional[float] = None
 
 #         print(r"""
