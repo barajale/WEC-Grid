@@ -1,7 +1,5 @@
 function [m2g_out] = w2gSim(simLength,dt,spectrumType,waveClassType,waveHeight,wavePeriod,waveSeed)
 
-
-% Convert inputs to appropriate types
 simLength = double(simLength);
 dt = double(dt);
 spectrumType = char(spectrumType);
@@ -11,25 +9,17 @@ wavePeriod = double(wavePeriod);
 waveSeed = int32(waveSeed);
 
 
-
 %% Initialization of WEC-Sim
 
 % Initialize WEC-Sim
-run('wecSimInputFile.m');
+run('wecSimInputFile');
+clear simu waves body cable pto constraint ptoSim mooring 
 
 %makes 'initializeWecSim' call 'wecSimInputFile' instead of other options
 runWecSimCML = 1;
 
-%initialize (this calls checkInputs which concatenates caseDir + simMechanicsFile)
+%initialize
 run('initializeWecSim');
-
-% Reset caseDir back to working directory for output file writing
-% working_dir was saved in wecSimInputFile.m
-simu.caseDir = working_dir;
-
-% Clear variables after initialization (but keep simu for later use)
-clear waves body cable pto constraint ptoSim mooring
-
 
 %% Run W2G sim
 sim(simu.simMechanicsFile, [], simset('SrcWorkspace', 'current'));
@@ -38,13 +28,12 @@ sim(simu.simMechanicsFile, [], simset('SrcWorkspace', 'current'));
 
 enableUserDefinedFunctions = 0; %set whether the UDFs are called, 0 to not call
 
-simu.caseDir = working_dir; %set case directory to working directory
 %run post-sim script
 run('stopWecSim');
 
 
 %add simulation parameters to struct for database storage
-%m2g_out.model = 'RM3'; %hardcoded model name for this device directory (char array)
+m2g_out.model = 'LUPA'; %hardcoded model name for this device directory (char array)
 m2g_out.simLength = simLength; %add simulation duration
 m2g_out.dt = dt; %add sampling period
 
@@ -58,11 +47,6 @@ m2g_out.t_eta = waves.waveAmpTime(:,1);
 m2g_out.eta   = waves.waveAmpTime(:,2);
  
 
-%% Plots
-
-%plot_W2G_waveforms
-
 end
-
 
 

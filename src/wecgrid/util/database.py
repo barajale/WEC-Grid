@@ -58,8 +58,9 @@ def _show_database_setup_message():
     print("No database path is configured.")
     print("\nPreloaded database can be downloaded here:")
     print("https://github.com/acep-uaf/wecgrid-database")
-    print("\nPlease update the database path using:")
-    print('engine.database.set_database_path(r"path/to/wecgrid-database/WEC-GRID.db")')
+    print("\nOptions to configure database:")
+    print('1. Use existing database: engine.database.set_database_path(r"path/to/WEC-GRID.db")')
+    print('2. Create new database: engine.database.initialize_database(r"path/to/new_database.db")')
     print("="*60 + "\n")
 
 class WECGridDB:
@@ -230,9 +231,14 @@ class WECGridDB:
             raise
         finally:
             conn.close()
-            
-    def initialize_database(self):
+
+    def initialize_database(self, db_path: Optional[str] = None):
         """Initialize database schema with WEC-Grid tables and indexes.
+        
+        Args:
+            db_path (str, optional): Path where database should be created. 
+                If provided, creates new database at this location and updates 
+                the current instance to use it. If None, uses existing database path.
         
         Creates all required tables according to the finalized WEC-Grid schema:
         - Metadata tables for simulation parameters
@@ -241,7 +247,39 @@ class WECGridDB:
         - Performance indexes for efficient queries
         
         All existing data is preserved if tables already exist.
+        
+        Example:
+            >>> # Create new database when none is configured
+            >>> engine.database.initialize_database("/path/to/new_database.db")
+            
+            >>> # Initialize schema on existing configured database
+            >>> engine.database.initialize_database()
         """
+        if db_path:
+            # Convert to absolute path
+            db_path = str(Path(db_path).absolute())
+            
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            
+            # Update the instance to use this new database path
+            save_database_config(db_path)
+            self.db_path = db_path
+            print(f"Creating new database at: {self.db_path}")
+            
+            # Create the database file if it doesn't exist
+            if not os.path.exists(db_path):
+                # Touch the file to create it
+                conn = sqlite3.connect(db_path)
+                conn.close()
+
+        # Verify we have a database path to work with
+        if self.db_path is None:
+            raise ValueError(
+                "No database path configured. Please provide db_path parameter or "
+                "use engine.database.set_database_path() to configure a database path first."
+            )
+
         with self.connection() as conn:
             cursor = conn.cursor()
             
@@ -528,7 +566,6 @@ class WECGridDB:
             print(f"Error reinitializing database: {e}")
             return False
 
-        
     def query(self, sql: str, params: tuple = None, return_type: str = "raw"):
         """Execute SQL query with flexible result formatting.
         

@@ -42,6 +42,3 @@ This section provides detailed API documentation for all WEC-Grid classes and fu
 ![mkapi](wecgrid.wec.wecsim_runner.WECSimRunner)
 
 ## Utilities
-
-### Resources
-![mkapi](wecgrid.util.resources)

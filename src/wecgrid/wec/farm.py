@@ -57,7 +57,7 @@ class WECFarm:
         - Add heterogeneous device support for different models
         - Implement smart farm control and optimization
     """
-    def __init__(self, farm_name: str, database, time: Any, wec_sim_id: int, bus_location: int, connecting_bus: int = 1, size: int = 1, gen_id: str = None, sbase: float = 100.0):
+    def __init__(self, farm_name: str, database, time: Any, wec_sim_id: int, bus_location: int, connecting_bus: int = 1, size: int = 1, gen_id: str = None, sbase: float = 100.0, scaling_factor: float = 1.0):
         """Initialize WEC farm with specified configuration.
         
         Args:
@@ -104,6 +104,7 @@ class WECFarm:
         self.config: Dict = None
         self.wec_devices: List[WECDevice] = []
         self.sbase: float = sbase
+        self.scaling_factor: float = scaling_factor
         # todo don't need the base here anymore
 
         self._prepare_farm()
@@ -276,6 +277,9 @@ class WECFarm:
         
         if df_full is None or df_full.empty:
             raise RuntimeError(f"[Farm] No WEC power data found for wec_sim_id={self.wec_sim_id}")
+
+        df_full.p = self.scaling_factor * df_full.p # scale active power
+        df_full.q = self.scaling_factor * df_full.q # scale reactive power
 
         # Downsample the full resolution data for grid integration
         df_downsampled = self.down_sample(df_full, self.time.delta_time)

@@ -11,12 +11,10 @@ from pathlib import Path
 from typing import Union
 
 
-from wecgrid.database.wecgrid_db import WECGridDB
 from wecgrid.modelers import PSSEModeler, PyPSAModeler
 from wecgrid.plot import WECGridPlotter
 from wecgrid.wec import WECFarm, WECSimRunner
-from wecgrid.util import WECGridTimeManager
-from wecgrid.util.resources import resolve_grid_case
+from wecgrid.util import WECGridTimeManager, WECGridDB
 
 
 from dataclasses import dataclass, field
@@ -34,12 +32,11 @@ import numpy as np
 from pathlib import Path
 from dataclasses import dataclass, field
 
-from wecgrid.database.wecgrid_db import WECGridDB
+from wecgrid.util.database import WECGridDB
 from wecgrid.modelers import PSSEModeler, PyPSAModeler
 from wecgrid.plot import WECGridPlot
 from wecgrid.wec import WECFarm, WECSimRunner
 from wecgrid.util import WECGridTimeManager
-from wecgrid.util.resources import resolve_grid_case
 
 
 class Engine:
@@ -127,9 +124,8 @@ class Engine:
             - Must be called before load() method
             - Case name auto-formatted for display
         """
-        path = resolve_grid_case(case_file)
-        self.case_file = str(path)
-        self.case_name = Path(path).stem.replace("_", " ").replace("-", " ")
+        self.case_file = str(case_file)
+        self.case_name = Path(case_file).stem.replace("_", " ").replace("-", " ")
             
 
     def load(self, software: List[str]) -> None:
@@ -181,6 +177,7 @@ class Engine:
         wec_sim_id: int = 1,
         bus_location: int = 1,
         connecting_bus: int = 1, # todo this should default to swing bus
+        scaling_factor: int = 1 # used for scaling wec power output
     ) -> None:
         """Add a Wave Energy Converter (WEC) farm to the power system.
         
@@ -219,7 +216,8 @@ class Engine:
             connecting_bus=connecting_bus,
             size=size,
             gen_id= len(self.wec_farms) + 1,  # Unique gen_id for each farm,
-            sbase = self.sbase
+            sbase = self.sbase,
+            scaling_factor = scaling_factor
             #TODO potenital issue where PSSE is using gen_id as the gen identifer and that's limited to 2 chars. so hard cap at 9 farms in this code rn
 
         )

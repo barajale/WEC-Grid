@@ -6,8 +6,13 @@ results, supporting cross-platform comparison between PSS®E and PyPSA modeling 
 """
 
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.patches import Rectangle, Circle, FancyArrow
+from matplotlib.lines import Line2D
 import pandas as pd
-from typing import Any
+import numpy as np
+import networkx as nx
+from typing import Any, List, Union, Optional
 
 
 class WECGridPlot:
@@ -45,7 +50,7 @@ class WECGridPlot:
         self.engine = engine
     
     def plot_component_data(self, software, component_type, parameter, component_name=None, 
-                           figsize=(12, 6), style='default', show_grid=True, 
+                           bus=None, figsize=(12, 6), style='default', show_grid=True, 
                            save_path=None, **plot_kwargs):
         """Plot time series data for grid components.
         
@@ -54,6 +59,7 @@ class WECGridPlot:
             component_type (str): Component type ("gen", "bus", "line", "load").
             parameter (str): Parameter to plot ("p", "q", "v_mag", "angle_deg", "line_pct").
             component_name (str or list, optional): Specific component(s) to plot.
+            bus (int or list, optional): Bus number(s) to filter components by location.
             figsize (tuple, optional): Figure size (width, height). Defaults to (12, 6).
             style (str, optional): Matplotlib style name. Defaults to 'default'.
             show_grid (bool, optional): Whether to show grid lines. Defaults to True.
@@ -71,14 +77,17 @@ class WECGridPlot:
             >>> # Plot all generator active power
             >>> fig, ax = plotter.plot_component_data("psse", "gen", "p")
             >>> 
-            >>> # Plot specific bus voltages
-            >>> plotter.plot_component_data("pypsa", "bus", "v_mag", 
-            ...                             component_name=["1", "2", "3"])
+            >>> # Plot generators at specific buses
+            >>> plotter.plot_component_data("pypsa", "gen", "p", bus=[1, 2, 14])
+            >>> 
+            >>> # Plot specific generator by name
+            >>> plotter.plot_component_data("pypsa", "gen", "p", component_name=["Gen_1"])
             
         Notes:
             - Automatically handles data validation and missing components
             - Y-axis labels set based on parameter type
             - Legend managed intelligently for multiple components
+            - Supports filtering by bus location or component name
         """
         
         # Set style with error handling
@@ -113,22 +122,38 @@ class WECGridPlot:
         
         data = getattr(component_data, parameter)
         
+        # Debug: Show actual column names in time-series data
+        print(f"Time-series data columns for {component_type}.{parameter}: {list(data.columns)}")
+        print(f"Time-series data shape: {data.shape}")
+        
+        # Resolve component selection based on names and/or bus filtering
+        selected_components = self._resolve_component_selection(
+            grid_obj, component_type, component_name, bus
+        )
+        
         # Handle component selection
-        if component_name is not None:
-            if isinstance(component_name, str):
-                component_name = [component_name]
+        if selected_components is not None:
+            # Filter data to only include selected components
+            available_cols = list(data.columns)
             
-            # Check if components exist
-            missing_components = [comp for comp in component_name if comp not in data.columns]
-            if missing_components:
-                print(f"Warning: Components not found: {missing_components}")
-                component_name = [comp for comp in component_name if comp in data.columns]
+            # Direct name matching since time-series now uses component names
+            valid_components = [comp for comp in selected_components if comp in available_cols]
             
-            if not component_name:
-                print("No valid components found to plot")
+            if not valid_components:
+                print(f"Error: No valid components found to plot.")
+                print(f"Requested components: {selected_components}")
+                print(f"Available columns: {available_cols}")
                 return None, None
             
-            data = data[component_name]
+            if len(valid_components) != len(selected_components):
+                missing = [comp for comp in selected_components if comp not in valid_components]
+                print(f"Warning: Some components not found: {missing}")
+                print(f"Found: {valid_components}")
+            
+            data = data[valid_components]
+            print(f"Plotting {len(valid_components)} selected components: {valid_components}")
+        else:
+            print(f"Plotting all {len(data.columns)} components")
         
         # Add data summary
         if isinstance(data, pd.DataFrame):
@@ -154,8 +179,13 @@ class WECGridPlot:
         
         # Customize the plot
         title = f"{component_type.upper()} {parameter.upper()} - {software.upper()}"
-        if component_name:
-            title += f" ({', '.join(component_name) if len(component_name) <= 3 else f'{len(component_name)} components'})"
+        if selected_components is not None:
+            if bus is not None:
+                bus_str = f"Bus {bus}" if isinstance(bus, int) else f"Buses {bus}"
+                title += f" ({bus_str})"
+            if component_name is not None:
+                comp_str = ', '.join(map(str, component_name)) if len(component_name) <= 3 else f'{len(component_name)} components'
+                title += f" - {comp_str}"
         
         ax.set_title(title, fontsize=14, fontweight='bold')
         ax.set_xlabel("Time", fontsize=12)
@@ -190,7 +220,116 @@ class WECGridPlot:
         
         return fig, ax
 
-    def plot_generator(self, software, parameter='p', component_name=None, **kwargs):
+    def _filter_components_by_bus(self, grid_obj, component_type: str, bus_list: List[int]) -> List[str]:
+        """Filter components by their bus location.
+        
+        Args:
+            grid_obj: Grid object with snapshot data
+            component_type (str): Component type ("gen", "load", "line")
+            bus_list (List[int]): List of bus numbers to filter by
+            
+        Returns:
+            List[str]: List of component names connected to specified buses
+        """
+        snapshot_attr = getattr(grid_obj, component_type, None)
+        if snapshot_attr is None or snapshot_attr.empty:
+            print(f"Warning: No snapshot data found for {component_type}")
+            return []
+        
+        # Different components have different bus connection columns
+        if component_type == "gen":
+            bus_col = "bus"
+        elif component_type == "load":
+            bus_col = "bus" 
+        elif component_type == "line":
+            # Lines connect two buses - include if either ibus or jbus matches
+            if "ibus" in snapshot_attr.columns and "jbus" in snapshot_attr.columns:
+                mask = (snapshot_attr["ibus"].isin(bus_list)) | (snapshot_attr["jbus"].isin(bus_list))
+                # Return component names instead of IDs
+                name_col = f"{component_type}_name"
+                if name_col in snapshot_attr.columns:
+                    filtered_names = snapshot_attr.loc[mask, name_col].tolist()
+                else:
+                    filtered_names = snapshot_attr.index[mask].astype(str).tolist()
+                print(f"Found {len(filtered_names)} {component_type} components at buses {bus_list}: {filtered_names}")
+                return filtered_names
+            else:
+                print(f"Warning: Line data missing ibus/jbus columns")
+                return []
+        else:
+            print(f"Warning: Unknown component type: {component_type}")
+            return []
+        
+        if bus_col in snapshot_attr.columns:
+            mask = snapshot_attr[bus_col].isin(bus_list)
+            # Return component names instead of IDs
+            name_col = f"{component_type}_name"
+            if name_col in snapshot_attr.columns:
+                filtered_names = snapshot_attr.loc[mask, name_col].tolist()
+            else:
+                # Fallback to IDs if no name column
+                filtered_names = snapshot_attr.index[mask].astype(str).tolist()
+            print(f"Found {len(filtered_names)} {component_type} components at buses {bus_list}: {filtered_names}")
+            return filtered_names
+        else:
+            print(f"Warning: {component_type} data missing {bus_col} column")
+            return []
+
+    def _resolve_component_selection(self, grid_obj, component_type: str, 
+                                   component_name: Optional[Union[str, List[str]]] = None,
+                                   bus: Optional[Union[int, List[int]]] = None) -> Optional[List[str]]:
+        """Resolve component selection based on names and/or bus locations.
+        
+        Args:
+            grid_obj: Grid object with snapshot data
+            component_type (str): Component type ("gen", "load", "line", "bus")
+            component_name (Optional[Union[str, List[str]]]): Specific component names
+            bus (Optional[Union[int, List[int]]]): Bus numbers to filter by
+            
+        Returns:
+            Optional[List[str]]: List of component names to plot, or None for all components
+        """
+        selected_components = []
+        
+        # Handle bus filtering
+        if bus is not None:
+            if isinstance(bus, int):
+                bus = [bus]
+            
+            print(f"Filtering {component_type} by buses: {bus}")
+            
+            if component_type == "bus":
+                # For buses, the bus numbers are the component names
+                selected_components.extend([str(b) for b in bus])
+            else:
+                # For other components, find component names connected to specified buses
+                bus_filtered = self._filter_components_by_bus(grid_obj, component_type, bus)
+                selected_components.extend(bus_filtered)
+        
+        # Handle component name filtering
+        if component_name is not None:
+            if isinstance(component_name, str):
+                component_name = [component_name]
+            
+            print(f"Filtering {component_type} by names: {component_name}")
+            
+            if selected_components:
+                # If we already have bus-filtered components, take intersection
+                intersection = [comp for comp in selected_components if comp in component_name]
+                selected_components = intersection
+                print(f"Intersection of bus and name filters: {selected_components}")
+            else:
+                # Otherwise, use name filtering
+                selected_components = component_name
+        
+        # Return None if no specific filtering requested (plot all)
+        if not selected_components and bus is None and component_name is None:
+            return None
+            
+        print(f"Final component selection for {component_type}: {selected_components}")
+        return selected_components if selected_components else []
+
+    def generator(self, software, parameter='p', bus=None, component_name=None, **kwargs):
         """Plot generator time-series data.
         
         Convenience method for plotting generator parameters using the main
@@ -200,7 +339,8 @@ class WECGridPlot:
             software (str): Backend software ("psse" or "pypsa").
             parameter (str, optional): Generator parameter to plot. Defaults to 'p'.
                 Common values: 'p' (active power), 'q' (reactive power), 'status'.
-            component_name (str or list, optional): Specific generator(s) to plot.
+            bus (int or list, optional): Bus number(s) to filter generators by location.
+            component_name (str or list, optional): Specific generator(s) to plot by name.
             **kwargs: Additional arguments passed to plot_component_data.
         
         Returns:
@@ -208,13 +348,15 @@ class WECGridPlot:
             
         Example:
             >>> # Plot all generator active power
-            >>> plotter.plot_generator("psse", "p")
-            >>> # Plot specific generators' reactive power
-            >>> plotter.plot_generator("pypsa", "q", component_name=["1_1", "2_1"])
+            >>> plotter.generator("psse", "p")
+            >>> # Plot generators at specific buses
+            >>> plotter.generator("pypsa", "p", bus=[1, 2, 31])
+            >>> # Plot specific generators by name
+            >>> plotter.generator("pypsa", "q", component_name=["Gen_1", "Gen_2"])
         """
-        return self.plot_component_data(software, 'gen', parameter, component_name, **kwargs)
+        return self.plot_component_data(software, 'gen', parameter, component_name=component_name, bus=bus, **kwargs)
 
-    def plot_bus(self, software, parameter='p', component_name=None, **kwargs):
+    def bus(self, software, parameter='p', bus=None, **kwargs):
         """Plot bus time-series data.
         
         Convenience method for plotting bus parameters using the main
@@ -225,7 +367,7 @@ class WECGridPlot:
             parameter (str, optional): Bus parameter to plot. Defaults to 'p'.
                 Common values: 'p' (net power), 'q' (net reactive power), 
                 'v_mag' (voltage magnitude), 'angle_deg' (voltage angle).
-            component_name (str or list, optional): Specific bus(es) to plot.
+            bus (list of int, optional): Bus number to filter generators by location.
             **kwargs: Additional arguments passed to plot_component_data.
         
         Returns:
@@ -237,9 +379,9 @@ class WECGridPlot:
             >>> # Plot specific bus power injections
             >>> plotter.plot_bus("pypsa", "p", component_name=[1, 2, 14])
         """
-        return self.plot_component_data(software, 'bus', parameter, component_name, **kwargs)
+        return self.plot_component_data(software, 'bus', parameter, component_name=None, bus=bus, **kwargs)
 
-    def plot_line(self, software, parameter='line_pct', component_name=None, **kwargs):
+    def line(self, software, parameter='line_pct', bus=None, component_name=None,  **kwargs):
         """Plot transmission line time-series data.
         
         Convenience method for plotting line parameters using the main
@@ -249,7 +391,8 @@ class WECGridPlot:
             software (str): Backend software ("psse" or "pypsa").
             parameter (str, optional): Line parameter to plot. Defaults to 'line_pct'.
                 Common values: 'line_pct' (loading percentage), 'status'.
-            component_name (str or list, optional): Specific line(s) to plot.
+            component_name (list of str, optional): Specific line(s) to plot.
+            bus (list of int, optional): Bus number to filter generators by location.
             **kwargs: Additional arguments passed to plot_component_data.
         
         Returns:
@@ -261,9 +404,9 @@ class WECGridPlot:
             >>> # Plot specific line status
             >>> plotter.plot_line("pypsa", "status", component_name=["Line_1_2_1"])
         """
-        return self.plot_component_data(software, 'line', parameter, component_name, **kwargs)
+        return self.plot_component_data(software, 'line', parameter, component_name=component_name, bus=bus, **kwargs)
 
-    def plot_load(self, software, parameter='p', component_name=None, **kwargs):
+    def load(self, software, parameter='p', bus = None, component_name=None, **kwargs):
         """Plot load time-series data.
         
         Convenience method for plotting load parameters using the main
@@ -285,7 +428,7 @@ class WECGridPlot:
             >>> # Plot specific load reactive power
             >>> plotter.plot_load("pypsa", "q", component_name=["Load_1_1", "Load_2_1"])
         """
-        return self.plot_component_data(software, 'load', parameter, component_name, **kwargs)
+        return self.plot_component_data(software, 'load', parameter, component_name=component_name, bus=bus, **kwargs)
 
     def plot_component_grid(self, software, component_type, parameters, 
                            component_name=None, figsize=(15, 10), **kwargs):
@@ -371,7 +514,7 @@ class WECGridPlot:
         return fig, axes
 
 
-    def plot_wec_analysis(self, software="psse", figsize=(12, 15)):
+    def plot_wec_analysis(self, software="pypsa", figsize=(12, 15)):
         """Generate comprehensive WEC farm analysis plots.
         
         Creates a specialized three-panel analysis plot focusing on Wave Energy Converter
@@ -540,7 +683,7 @@ class WECGridPlot:
         return fig, axes
 
 
-    def quick_overview(self, software="psse"):
+    def quick_overview(self, software="pypsa"):
         """Generate a quick overview of all major grid parameters.
         
         Creates a comprehensive set of overview plots for rapid system assessment.
@@ -981,3 +1124,255 @@ class WECGridPlot:
         plt.show()
         
         return fig, (ax1, ax2)
+
+    def sld(self, software: str, figsize=(14, 10), title=None, save_path=None, show=False):
+        """Generate single-line diagram using GridState data.
+        
+        Creates a single-line diagram visualization using the standardized GridState
+        component data. Works with both PSS®E and PyPSA backends by using the unified
+        data schema from GridState snapshots.
+        
+        Args:
+            software (str): Backend software ("psse" or "pypsa")
+            figsize (tuple): Figure size as (width, height)
+            title (str, optional): Custom title for the diagram
+            save_path (str, optional): Path to save the figure
+            show (bool): Whether to display the figure (default: False)
+            
+        Returns:
+            matplotlib.figure.Figure: The generated SLD figure
+            
+        Notes:
+            Uses NetworkX for automatic layout calculation since GridState doesn't
+            include geographical bus positions. The diagram includes:
+            
+            - Buses: Colored rectangles based on type (Slack=red, PV=green, PQ=gray)
+            - Lines: Black dashed lines connecting buses
+            - Generators: Circles above buses with generators
+            - Loads: Downward arrows on buses with loads
+            
+            Limitations:
+            - No transformer identification (would need additional data)
+            - Layout is algorithmic, not geographical
+            - No shunt devices (not in GridState schema)
+        """
+        try:
+            # Get the appropriate grid object
+            grid_obj = getattr(self.engine, software).grid
+        except AttributeError:
+            raise ValueError(f"Engine does not have {software} attribute or grid is not loaded")
+        
+        # Extract data from GridState
+        bus_df = grid_obj.bus.copy()
+        line_df = grid_obj.line.copy()
+        gen_df = grid_obj.gen.copy()
+        load_df = grid_obj.load.copy()
+        
+        if bus_df.empty:
+            raise ValueError("No bus data available for SLD generation")
+        
+        print(f"SLD Data Summary:")
+        print(f"  Buses: {len(bus_df)}")
+        print(f"  Lines: {len(line_df)}")
+        print(f"  Generators: {len(gen_df)}")
+        print(f"  Loads: {len(load_df)}")
+        
+        # Check if required columns exist
+        if 'bus' not in bus_df.columns and bus_df.index.name != 'bus':
+            print(f"  ERROR: 'bus' column missing from bus DataFrame")
+            print(f"  Available columns: {list(bus_df.columns)}")
+            print(f"  Index name: {bus_df.index.name}")
+            print(f"  Bus DataFrame head:\n{bus_df.head()}")
+            
+            # Check if bus numbers are in the index
+            if bus_df.index.name == 'bus' or 'bus' in str(bus_df.index.name).lower():
+                print("  Bus numbers found in DataFrame index, will use index values")
+            else:
+                raise ValueError("Bus DataFrame missing required 'bus' column or index")
+        
+        # Create network graph for layout
+        G = nx.Graph()
+        
+        # Add buses as nodes - handle index vs column
+        if 'bus' in bus_df.columns:
+            bus_numbers = bus_df['bus']
+        else:
+            # Bus numbers are in the index
+            bus_numbers = bus_df.index
+            
+        for bus_num in bus_numbers:
+            G.add_node(bus_num)
+        
+        # Add lines as edges - handle potential column name variations  
+        ibus_col = 'ibus' if 'ibus' in line_df.columns else 'from_bus'
+        jbus_col = 'jbus' if 'jbus' in line_df.columns else 'to_bus'
+        status_col = 'status' if 'status' in line_df.columns else None
+        
+        for _, line_row in line_df.iterrows():
+            if status_col is None or line_row[status_col] == 1:  # Only active lines
+                if ibus_col in line_df.columns and jbus_col in line_df.columns:
+                    G.add_edge(line_row[ibus_col], line_row[jbus_col])
+        
+        # Calculate layout using NetworkX
+        try:
+            pos = nx.kamada_kawai_layout(G)
+        except:
+            # Fallback to spring layout if kamada_kawai fails
+            pos = nx.spring_layout(G, seed=42)
+        
+        # Normalize positions for better visualization
+        if pos:
+            pos_values = np.array(list(pos.values()))
+            x_vals, y_vals = pos_values[:, 0], pos_values[:, 1]
+            x_min, x_max = np.min(x_vals), np.max(x_vals)
+            y_min, y_max = np.min(y_vals), np.max(y_vals)
+            
+            # Normalize to reasonable plotting range
+            for node in pos:
+                pos[node] = (
+                    2 * (pos[node][0] - x_min) / (x_max - x_min) - 1,
+                    1.5 * (pos[node][1] - y_min) / (y_max - y_min) - 0.5
+                )
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Bus visualization parameters
+        node_width, node_height = 0.12, 0.04
+        
+        # Bus type color mapping
+        bus_colors = {
+            "Slack": "#FF4500",  # Red-orange
+            "PV": "#32CD32",     # Green  
+            "PQ": "#A9A9A9",     # Gray
+        }
+        
+        # Draw transmission lines first (so they appear behind buses)
+        for _, line_row in line_df.iterrows():
+            if status_col is None or line_row[status_col] == 1:  # Only active lines
+                if ibus_col in line_df.columns and jbus_col in line_df.columns:
+                    ibus, jbus = line_row[ibus_col], line_row[jbus_col]
+                    if ibus in pos and jbus in pos:
+                        x1, y1 = pos[ibus]
+                        x2, y2 = pos[jbus]
+                        ax.plot([x1, x2], [y1, y2], 'k-', linewidth=1.5, alpha=0.7)
+        
+        # Identify buses with generators and loads - handle column variations
+        gen_bus_col = 'bus' if 'bus' in gen_df.columns else 'connected_bus'
+        load_bus_col = 'bus' if 'bus' in load_df.columns else 'connected_bus'
+        gen_status_col = 'status' if 'status' in gen_df.columns else None
+        load_status_col = 'status' if 'status' in load_df.columns else None
+        
+        # Get active generators and loads
+        if gen_status_col:
+            gen_buses = set(gen_df[gen_df[gen_status_col] == 1][gen_bus_col])
+        else:
+            gen_buses = set(gen_df[gen_bus_col])
+            
+        if load_status_col:
+            load_buses = set(load_df[load_df[load_status_col] == 1][load_bus_col])
+        else:
+            load_buses = set(load_df[load_bus_col])
+        
+        # Draw buses
+        bus_type_col = 'type' if 'type' in bus_df.columns else 'control'
+        # Determine bus column name
+        if 'bus' in bus_df.columns:
+            bus_col = 'bus'
+        else:
+            # Bus numbers are in the index
+            bus_col = None
+            
+        for _, bus_row in bus_df.iterrows():
+            if bus_col:
+                bus_num = bus_row[bus_col]
+            else:
+                bus_num = bus_row.name  # Use index value
+            if bus_num not in pos:
+                continue
+                
+            x, y = pos[bus_num]
+            bus_type = bus_row[bus_type_col] if bus_type_col in bus_df.columns else "PQ"
+            bus_color = bus_colors.get(bus_type, "#D3D3D3")  # Default light gray
+            
+            # Draw bus rectangle
+            rect = Rectangle(
+                (x - node_width / 2, y - node_height / 2), 
+                node_width, node_height,
+                linewidth=1.5, 
+                edgecolor='black', 
+                facecolor=bus_color
+            )
+            ax.add_patch(rect)
+            
+            # Add bus number label
+            ax.text(x, y, str(bus_num), fontsize=8, fontweight="bold", 
+                   ha='center', va='center')
+            
+            # Draw generators (circles above bus)
+            if bus_num in gen_buses:
+                gen_x = x
+                gen_y = y + node_height / 2 + 0.05
+                gen_size = 0.02
+                # Connection line from bus to generator
+                ax.plot([x, gen_x], [y + node_height / 2, gen_y - gen_size], 
+                       color='black', linewidth=2)
+                # Generator circle
+                ax.add_patch(Circle((gen_x, gen_y), gen_size, 
+                                  color='none', ec='black', linewidth=1.5))
+                # Generator symbol 'G'
+                ax.text(gen_x, gen_y, 'G', fontsize=6, fontweight="bold",
+                       ha='center', va='center')
+            
+            # Draw loads (downward arrows)
+            if bus_num in load_buses:
+                load_x = x + node_width / 2 - 0.02
+                load_y = y - node_height / 2
+                ax.arrow(load_x, load_y, 0, -0.04, 
+                        head_width=0.015, head_length=0.015, 
+                        fc='black', ec='black')
+        
+        # Set up the plot
+        ax.set_aspect('equal', adjustable='datalim')
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_frame_on(False)
+        
+        # Set title
+        if title is None:
+            case_name = getattr(self.engine, 'case_name', 'Power System')
+            title = f"Single-Line Diagram - {case_name} ({software.upper()})"
+        ax.set_title(title, fontsize=14, fontweight='bold')
+        
+        # Create legend
+        legend_elements = [
+            Line2D([0], [0], marker='o', color='black', markersize=8, 
+                   label="Generator", markerfacecolor='none', 
+                   markeredgecolor='black', linewidth=0),
+            Line2D([0], [0], marker='^', color='black', markersize=8, 
+                   label="Load", markerfacecolor='black', linewidth=0),
+            Line2D([0], [0], marker='s', color='#FF4500', markersize=8, 
+                   label="Slack Bus", markerfacecolor='#FF4500', linewidth=0),
+            Line2D([0], [0], marker='s', color='#32CD32', markersize=8, 
+                   label="PV Bus", markerfacecolor='#32CD32', linewidth=0),
+            Line2D([0], [0], marker='s', color='#A9A9A9', markersize=8, 
+                   label="PQ Bus", markerfacecolor='#A9A9A9', linewidth=0),
+            Line2D([0], [0], color='black', linewidth=1.5, 
+                   label="Transmission Line"),
+        ]
+        
+        ax.legend(handles=legend_elements, loc="upper left", fontsize=10, 
+                 frameon=True, edgecolor='black', title="Legend")
+        
+        # Save if requested
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"SLD saved to: {save_path}")
+        
+        plt.tight_layout()
+        
+        # Only show if explicitly requested
+        if show:
+            plt.show()
+        
+        return fig

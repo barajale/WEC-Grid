@@ -53,7 +53,6 @@ class WECDevice:
     """
     name: str
     dataframe: pd.DataFrame = field(default_factory=pd.DataFrame)
-    dataframe_full: pd.DataFrame = field(default_factory=pd.DataFrame)
     bus_location: Optional[int] = None
     model: Optional[str] = None
     wec_sim_id: Optional[int] = None

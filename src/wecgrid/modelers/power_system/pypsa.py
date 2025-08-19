@@ -638,7 +638,7 @@ class PyPSAModeler(PowerSystemModeler):
 
         df = pd.DataFrame({
             "bus":       buses.index.astype(int),
-            "bus_name":  f"Bus_{buses.index.astype(int)}",
+            "bus_name":  [f"Bus_{int(bus_id)}" for bus_id in buses.index],
             "type":      buses.get("control", pd.Series("PQ", index=buses.index)).fillna("PQ"),
             "p":         (p_MW / self.sbase).astype(float),
             "q":         (q_MVAr / self.sbase).astype(float),

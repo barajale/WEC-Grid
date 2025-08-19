@@ -247,7 +247,7 @@ class GridState:
             raise ValueError(f"'{id_col}' not found in columns or as index for df_type='{df_type}'")
 
         df = df.copy()
-        df.set_index(id_col, inplace=True)   # now index = IDs (bus #, gen ID, etc.)
+        #df.set_index(id_col, inplace=True)   # now index = IDs (bus #, gen ID, etc.)
 
         # keep snapshot (indexed by ID)
         if not hasattr(self, component):
@@ -261,7 +261,7 @@ class GridState:
 
         # for each measured variable, maintain a DataFrame with:
         #   rows    = timestamps
-        #   columns = IDs (df.index)
+        #   columns = component names (not IDs)
         for var in df.columns:
             series = df[var]  # index = IDs, values = this variable for this snapshot
 
@@ -269,13 +269,37 @@ class GridState:
                 t_attr[var] = pd.DataFrame()
 
             tdf = t_attr[var]
-            # add any new IDs as columns
-            missing = series.index.difference(tdf.columns)
-            if len(missing) > 0:
-                tdf[missing] = pd.NA
+            
+            # Use component names as column headers instead of IDs
+            name_col = f"{component}_name"
+            if name_col in df.columns:
+                # Create mapping from ID to name
+                id_to_name = dict(zip(df.index, df[name_col]))
+                # Convert series index from IDs to names
+                series_with_names = series.copy()
+                series_with_names.index = [id_to_name.get(idx, str(idx)) for idx in series.index]
+                
+                # add any new component names as columns
+                missing = series_with_names.index.difference(tdf.columns)
+                if len(missing) > 0:
+                    for col in missing:
+                        tdf[col] = pd.NA
 
-            # set the row for this timestamp, aligned by ID
-            tdf.loc[timestamp, series.index] = series.values
+                # set the row for this timestamp, one component at a time to avoid alignment issues
+                for comp_name, value in series_with_names.items():
+                    tdf.loc[timestamp, comp_name] = value
+            else:
+                # Fallback to using IDs if no name column available
+                # add any new IDs as columns
+                missing = series.index.difference(tdf.columns)
+                if len(missing) > 0:
+                    for col in missing:
+                        tdf[col] = pd.NA
+
+                # set the row for this timestamp, one component at a time
+                for comp_id, value in series.items():
+                    tdf.loc[timestamp, comp_id] = value
+                
             t_attr[var] = tdf
 
 
