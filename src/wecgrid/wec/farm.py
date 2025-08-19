@@ -57,7 +57,7 @@ class WECFarm:
         - Add heterogeneous device support for different models
         - Implement smart farm control and optimization
     """
-    def __init__(self, farm_name: str, database, time: Any, wec_sim_id: int, bus_location: int, connecting_bus: int = 1, size: int = 1, farm_id: int = None, sbase: float = 100.0, scaling_factor: float = 1.0):
+    def __init__(self, farm_name: str, database, time: Any, wec_sim_id: int, bus_location: int, connecting_bus: int = 1, gen_name: str = '', size: int = 1, farm_id: int = None, sbase: float = 100.0, scaling_factor: float = 1.0):
         """Initialize WEC farm with specified configuration.
         
         Args:
@@ -105,6 +105,7 @@ class WECFarm:
         self.wec_devices: List[WECDevice] = []
         self.sbase: float = sbase
         self.scaling_factor: float = scaling_factor
+        self.gen_name = gen_name
         # todo don't need the base here anymore
 
         self._prepare_farm()

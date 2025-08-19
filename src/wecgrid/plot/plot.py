@@ -577,8 +577,8 @@ class WECGridPlot:
                 fig, axes = plt.subplots(3, 1, figsize=figsize)
                 
                 p_data = getattr(gen_data, 'p')
-                gen_data = getattr(p_data, ) # generator name 'G0'..'G6'
-                
+                gen_data = getattr(p_data, farm.gen_name) # generator name 'G0'..'G6'
+
                 # Plot WEC power data
                 wec_df = pd.DataFrame(gen_data)
                 wec_df.plot(ax=axes[0], linewidth=2)
@@ -587,88 +587,31 @@ class WECGridPlot:
                 axes[0].grid(True, alpha=0.3)
                 if len(gen_data) > 1:
                     axes[0].legend(loc='upper right')
-                    
-            # # Plot 2: WEC Contribution Percentage over Time
-            # if wec_power_data:
-            #     wec_df = pd.DataFrame(wec_power_data)
-            #     total_wec_power = wec_df.sum(axis=1)
                 
-            #     # Calculate total generation from all gen_p_* columns
-            #     all_gen_cols = [col for col in ts_data.columns if col.startswith('gen_p_')]
-            #     if all_gen_cols:
-            #         total_gen_power = ts_data[all_gen_cols].sum(axis=1)
-            #         wec_percentage = (total_wec_power / total_gen_power) * 100
+                #Plot WEC Farm Contribution Percentage over Time
+                contribution = (gen_data / gen_data.sum()).fillna(0) * 100
+                contribution.plot(ax=axes[1], linewidth=2)
+                axes[1].set_title("WEC Farm Contribution Percentage")
+                axes[1].set_ylabel("Contribution (%)")
+                axes[1].grid(True, alpha=0.3)
+                if len(contribution) > 1:
+                    axes[1].legend(loc='upper right')
+
+                #Plot WEC-Farm Bus Voltage
+                bus_data = getattr(bus_data, farm.bus_location)
+                bus_data.plot(ax=axes[2], linewidth=2)
+                axes[2].set_title("WEC-Farm Bus Voltage")
+                axes[2].set_ylabel("Voltage (p.u.)")
+                axes[2].grid(True, alpha=0.3)
+                if len(bus_data) > 1:
+                    axes[2].legend(loc='upper right')
+                
+                fig.show()
                     
-            #         axes[1].plot(wec_percentage.index, wec_percentage.values, 
-            #                     label="WEC Contribution %", linewidth=2, color='green')
-            #         axes[1].set_title("WEC-Farm Contribution to Total Generation (%)")
-            #         axes[1].set_ylabel("Percentage (%)")
-            #         axes[1].legend()
-            #         axes[1].grid(True, alpha=0.3)
-            #     else:
-            #         axes[1].text(0.5, 0.5, "No total generation\ndata for comparison", 
-            #                     ha='center', va='center', transform=axes[1].transAxes)
-            #         axes[1].set_title("WEC-Farm Contribution to Total Generation (%)")
-            # else:
-            #     axes[1].text(0.5, 0.5, "No WEC power data\nfor percentage calculation", 
-            #                 ha='center', va='center', transform=axes[1].transAxes)
-            #     axes[1].set_title("WEC-Farm Contribution to Total Generation (%)")
-            
-            # # Plot 3: WEC-Farm Bus Voltage
-            # wec_buses = list(set(info['bus_location'] for info in wec_farm_info))
-            # wec_voltage_data = {}
-            
-            # # Find bus voltage columns (look for bus_v_* patterns)
-            # for col in ts_data.columns:
-            #     if col.startswith('bus_v_'):
-            #         bus_name = col.replace('bus_v_', '')
-            #         # Try to match bus numbers
-            #         try:
-            #             bus_num = int(bus_name)
-            #             if bus_num in wec_buses:
-            #                 # Find corresponding farm name for this bus
-            #                 farm_names = [info['farm_name'] for info in wec_farm_info 
-            #                             if info['bus_location'] == bus_num]
-            #                 if farm_names:
-            #                     label = f"{farm_names[0]} (Bus {bus_num})"
-            #                     wec_voltage_data[label] = ts_data[col]
-            #         except ValueError:
-            #             # Handle non-numeric bus names
-            #             continue
-            
-            # if wec_voltage_data:
-            #     voltage_df = pd.DataFrame(wec_voltage_data)
-            #     voltage_df.plot(ax=axes[2], linewidth=2)
-            #     axes[2].set_title("WEC-Farm Bus Voltage")
-            #     axes[2].set_ylabel("Voltage (p.u.)")
-            #     axes[2].grid(True, alpha=0.3)
-            #     if len(wec_voltage_data) > 1:
-            #         axes[2].legend(loc='upper right')
-            # else:
-            #     axes[2].text(0.5, 0.5, f"WEC farm bus voltage data\nnot found for buses {wec_buses}", 
-            #                 ha='center', va='center', transform=axes[2].transAxes)
-            #     axes[2].set_title("WEC-Farm Bus Voltage")
-            
-            # # Set overall title and adjust layout
-            # fig.suptitle(f"WEC Farm Analysis - {software.upper()}", fontsize=16, fontweight='bold')
-            # plt.tight_layout()
-            # if show:
-            #     plt.show()
-            
         except Exception as e:
-            print(f"Error in WEC analysis: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            # Show error message on first subplot
-            axes[0].text(0.5, 0.5, f"Error: {e}", ha='center', va='center', transform=axes[0].transAxes)
-            axes[0].set_title("WEC Farm Analysis - Error")
-            for i in range(1, 3):
-                axes[i].text(0.5, 0.5, "Error occurred", ha='center', va='center', transform=axes[i].transAxes)
-            if show:
-                plt.show()
-        
-        return fig, axes
+            print(f"Error plotting WEC analysis: {e}")
+            return None, None
+
 
 
     def quick_overview(self, software="pypsa"):

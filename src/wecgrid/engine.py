@@ -210,7 +210,7 @@ class Engine:
         wec_farm: WECFarm = WECFarm(
             farm_name=farm_name,
             farm_id = len(self.wec_farms) + 1,  # Unique farm_id for each farm,
-            gen_name = "" 
+            gen_name = "",
             database=self.database,
             time=self.time,
             wec_sim_id= wec_sim_id,
@@ -227,7 +227,7 @@ class Engine:
         for modeler in [self.psse, self.pypsa]:
                 if modeler is not None:
                     modeler.add_wec_farm(wec_farm)
-                    wec_farm.gen_name = modeler.grid.
+                    wec_farm.gen_name = modeler.grid.gen.loc[modeler.grid.gen.bus == bus_location].gen_name[0]
 
 
     def generate_load_curves(
