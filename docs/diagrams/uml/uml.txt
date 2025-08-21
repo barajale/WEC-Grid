@@ -1,0 +1,137 @@
+@startuml WEC-Grid Medium Detail Class Structure
+!theme plain
+skinparam backgroundColor white
+skinparam classBackgroundColor lightblue
+skinparam classBorderColor black
+
+package "wecgrid.engine" {
+    class Engine {
+        -case_file: str
+        -case_name: str
+        -time: WECGridTimeManager
+        -psse: PSSEModeler
+        -pypsa: PyPSAModeler
+        -wec_farms: List[WECFarm]
+        -database: WECGridDB
+        -plot: WECGridPlotter
+        +case(model_name: str)
+        +load(backends: List[str])
+        +apply_wec(farm_name: str, size: int, sim_id: int, model: str, bus_location: int)
+        +simulate(load_curve: bool, plot: bool)
+        +compare_results()
+    }
+}
+
+package "wecgrid.util" {
+    class WECGridTimeManager {
+        -start_time: datetime
+        -snapshots: DatetimeIndex
+        +get_snapshots(): DatetimeIndex
+        +time_at_index(index: int): datetime
+    }
+}
+
+package "wecgrid.database" {
+    class WECGridDB {
+        -db_path: str
+        +get_wec_data(sim_id: int): DataFrame
+        +store_simulation_results(): bool
+        +query_time_series(): DataFrame
+        +check_wec_data_exists(sim_id: int): bool
+    }
+}
+
+package "wecgrid.plot" {
+    class WECGridPlotter {
+        -engine: Engine
+        +quick_overview()
+        +plot_wec_analysis()
+        +plot_bus_comparison()
+        +plot_voltage_profile()
+        +compare_backends()
+    }
+}
+
+package "wecgrid.modelers" {
+    abstract class PowerSystemModeler {
+        -engine: Any
+        -grid: GridState
+        +init_api(): bool
+        +solve_powerflow(): bool
+        +add_wec_farm(farm: WECFarm): bool
+        +take_snapshot(timestamp: datetime)
+    }
+
+    class PSSEModeler {
+        -psspy: module
+        -snapshots: Dict
+        +init_api(): bool
+        +solve_powerflow(): bool
+        +machine_chng_4()
+        +load_data_6()
+    }
+
+    class PyPSAModeler {
+        -network: pypsa.Network
+        -snapshots: DataFrame
+        +init_api(): bool
+        +solve_powerflow(): bool
+        +import_from_raw()
+        +solve_opf(): Dict
+    }
+
+    class GridState {
+        -buses: DataFrame
+        -generators: DataFrame
+        -lines: DataFrame
+        +get_buses(): DataFrame
+        +get_generators(): DataFrame
+    }
+}
+
+package "wecgrid.wec" {
+    class WECFarm {
+        -farm_name: str
+        -sim_id: int
+        -model: str
+        -bus_location: int
+        -size: int
+        -wec_devices: List[WECDevice]
+        +power_at_snapshot(timestamp: datetime): float
+        +get_time_series(): DataFrame
+        +calculate_total_power(): float
+    }
+
+    class WECDevice {
+        -name: str
+        -dataframe: DataFrame
+        -base: float
+        -bus_location: int
+        -model: str
+        +power_at_time(timestamp: datetime): float
+    }
+
+    class WECSimRunner {
+        -wec_sim_path: str
+        -matlab_engine: matlab.engine
+        +run_simulation(sim_id: int): bool
+        +extract_power_data(): DataFrame
+    }
+}
+
+' Relationships
+Engine *-- WECGridTimeManager
+Engine *-- WECGridDB
+Engine *-- WECGridPlotter
+Engine *-- PSSEModeler
+Engine *-- PyPSAModeler
+Engine *-- WECFarm
+Engine *-- WECSimRunner
+
+PowerSystemModeler <|-- PSSEModeler
+PowerSystemModeler <|-- PyPSAModeler
+PowerSystemModeler *-- GridState
+
+WECFarm *-- WECDevice
+
+@enduml

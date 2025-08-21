@@ -1,0 +1,15 @@
+theme: minima
+
+title: "WEC-Grid Documentation"
+description: "GitHub Pages site for WEC-Grid"
+
+# Because your repo is named “WEC-Grid”, Pages will publish at
+# https://acep-uaf.github.io/WEC-Grid/
+baseurl: "/WEC-Grid"
+
+# Don’t process these files through Jekyll:
+exclude:
+  - Gemfile
+  - Gemfile.lock
+
+markdown: kramdown
