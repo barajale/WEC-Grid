@@ -107,6 +107,8 @@ class WECFarm:
         self.scaling_factor: float = scaling_factor
         self.gen_name = gen_name
         # todo don't need the base here anymore
+        # todo: add bus voltage. 
+        # todo: connecting line
 
         self._prepare_farm()
 

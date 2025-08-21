@@ -18,28 +18,6 @@ waves.period = wavePeriod;
 waves.spectrumType = spectrumType;
 waves.phaseSeed = waveSeed;
 
-% %% Body Data
-% %% Body 1: Float
-% body(1) = bodyClass('./hydroData/floatspar_D1_14m_d2_78m.h5');
-% body(1).geometryFile = './geometry/LUPA_Fall2022_float_geometry.stl';
-% body(1).mass = 'equilibrium';
-% body(1).viz.color = [255/256 127/256 36/256];
-% body(1).inertia = [64.60 65.06 17.83];                      % [kg-m^2] As measured from dry swing tests
-% body(1).quadDrag.cd = [0.54 0.54 0.15 0.54 0.54 0.15];          % [-] Quadratic drag coefficient Cd as found from Gu et al 2018
-% body(1).quadDrag.area = [0.368 0.368 0.785 0.368 0.368 0.785];  % [m^2] Characteristic area in relevant plane
-
-% %% Body 2: Spar
-% body(2) = bodyClass('./hydroData/floatspar_D1_14m_d2_78m.h5');
-% body(2).geometryFile = './geometry/LUPA_spar_D1_14m_full.stl';
-% body(2).mass = 202.21;                                             % [kg] Positively bouyant spar.
-% body(2).viz.color = [211/256 211/256 211/256];
-% body(2).inertia = [304.786 305.250 15.775];                      % [kg-m^2] As measured from dry swing tests
-% body(2).quadDrag.cd = [0.6 0.6 2.8 0.6 0.6 2.8];                    % [-] Quadratic drag coefficient Cd as found from Beatty 2015 and Singh & Mittal 2005
-% body(2).quadDrag.area = [0.558 0.558 0.636 0.558 0.558 0.636];      % [m^2] Characteristic area in relevant plane
-% body(2).setInitDisp([0 0 0],[0 0 0 0],[0 0 -0.22]);                 % [m] Initial Displacement  Set to engage mooring lines for pre-tension.
-
-
-
 %% Body Data
 %% Body 1: Float
 body(1) = bodyClass('.\hydroData\floatspar_20m.h5');

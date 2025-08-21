@@ -2,7 +2,7 @@
 
 """Time management and coordination for WEC-Grid simulations.
 
-Provides the WECGridTimeManager dataclass for coordinating simulation time
+Provides the WECGridTime dataclass for coordinating simulation time
 across WEC-Grid components including power system modeling, WEC device
 simulations, and data visualization with consistent temporal alignment.
 """
@@ -12,7 +12,7 @@ from datetime import datetime
 import pandas as pd
 
 @dataclass
-class WECGridTimeManager:
+class WECGridTime:
     """Centralized time coordination for WEC-Grid simulations.
     
     Coordinates temporal aspects across power system modeling (PSS®E, PyPSA),
@@ -33,7 +33,7 @@ class WECGridTimeManager:
             
     Example:
         >>> # Default 24-hour simulation at 5-minute intervals
-        >>> time_mgr = WECGridTimeManager()
+        >>> time_mgr = WECGridTime()
         >>> print(f"Duration: {time_mgr.num_steps} steps")
         >>> print(f"Interval: {time_mgr.freq}")
         Duration: 288 steps
@@ -41,7 +41,7 @@ class WECGridTimeManager:
         
         >>> # Custom simulation period
         >>> from datetime import datetime
-        >>> time_mgr = WECGridTimeManager(
+        >>> time_mgr = WECGridTime(
         ...     start_time=datetime(2023, 6, 15, 0, 0, 0),
         ...     sim_length=144,  # 12 hours
         ...     freq="5T"
@@ -105,9 +105,9 @@ class WECGridTimeManager:
         self.sim_stop = end_time
 
     def __repr__(self) -> str:
-        """Return concise string representation of the WECGridTimeManager."""
+        """Return concise string representation of the WECGridTime."""
         return (
-            f"WECGridTimeManager:\n"
+            f"WECGridTime:\n"
             f"├─ start_time: {self.start_time}\n"
             f"├─ sim_stop:   {self.sim_stop}\n"
             f"├─ num_steps: {self.num_steps} steps\n"

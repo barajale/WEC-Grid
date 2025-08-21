@@ -11,10 +11,10 @@ from pathlib import Path
 from typing import Union
 
 
-from wecgrid.modelers import PSSEModeler, PyPSAModeler
-from wecgrid.plot import WECGridPlotter
-from wecgrid.wec import WECFarm, WECSimRunner
-from wecgrid.util import WECGridTimeManager, WECGridDB
+# from wecgrid.modelers import PSSEModeler, PyPSAModeler
+# from wecgrid.plot import WECGridPlotter
+# from wecgrid.wec import WECFarm, WECSimRunner
+# from wecgrid.util import WECGridTime, WECGridDB
 
 
 from dataclasses import dataclass, field
@@ -36,7 +36,7 @@ from wecgrid.util.database import WECGridDB
 from wecgrid.modelers import PSSEModeler, PyPSAModeler
 from wecgrid.plot import WECGridPlot
 from wecgrid.wec import WECFarm, WECSimRunner
-from wecgrid.util import WECGridTimeManager
+from wecgrid.util import WECGridTime, WECGridDB
 
 
 class Engine:
@@ -71,6 +71,7 @@ class Engine:
         
     TODO:
         - Consider renaming to WECGridEngine for clarity
+        - need a way to map GridState componet names to modeler component names
     """
 
     def __init__(
@@ -83,12 +84,12 @@ class Engine:
         """
         self.case_file: Optional[str] = None
         self.case_name: Optional[str] = None
-        self.time = WECGridTimeManager() # TODO this needs more functionality
+        self.time = WECGridTime() # TODO this needs more functionality
         self.psse: Optional[PSSEModeler] = None
         self.pypsa: Optional[PyPSAModeler] = None
         self.wec_farms: List[WECFarm] = []
         self.database = WECGridDB(self)
-        self.plot = WECGridPlotter(self)
+        self.plot = WECGridPlot(self)
         self.wecsim: WECSimRunner = WECSimRunner(self.database)
         self.sbase: Optional[float] = None
 

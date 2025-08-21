@@ -89,6 +89,8 @@ class GridState:
     line_t: AttrDict = field(default_factory=AttrDict)
     load_t: AttrDict = field(default_factory=AttrDict)
 
+    # todo: need to add a way to identify WECs on a grid, 'G7' is a wecfarm
+    
     def __repr__(self) -> str:
         """Return a formatted string representation of the GridState.
         
