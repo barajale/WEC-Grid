@@ -120,6 +120,7 @@ class GridState:
                 └─ time-series: p, q, status
         """
         def ts_keys(d):
+            """Format available time-series keys for display."""
             return ", ".join(d.keys()) if d else "none"
 
         return (
