@@ -17,7 +17,7 @@ def test_wecgrid_database():
 
 
 def test_wecgrid_time():
-    """Test time module can be imported."""
+    """Test WECGridTime can be imported."""
     from wecgrid.util.time import WECGridTime
     assert WECGridTime is not None
 

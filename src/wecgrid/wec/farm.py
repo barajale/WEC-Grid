@@ -242,7 +242,7 @@ class WECFarm:
         See Also:
             WECDevice: Individual device objects created by this method
             WECSimRunner: Generates the simulation data loaded here
-            WECGridTimeManager: Provides time configuration for indexing
+            WECGridTime: Provides time configuration for indexing
         """
         # First get model type from wec_simulations table using wec_sim_id
         model_query = "SELECT model_type FROM wec_simulations WHERE wec_sim_id = ?"
@@ -399,7 +399,7 @@ class WECFarm:
             
         See Also:
             _prepare_farm: Uses this method for WEC data preprocessing
-            WECGridTimeManager: Provides target sampling frequencies
+            WECGridTime: Provides target sampling frequencies
             pandas.DataFrame.resample: Alternative pandas resampling method
         """
         if 'time' not in wec_df.columns:
