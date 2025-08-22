@@ -768,7 +768,7 @@ class WECGridDB:
             grid_sim_id (int): Grid simulation ID.
             grid_state_obj: GridState object with time-series data.
             software (str): Software name ("psse" or "pypsa").
-            timeManager: WECGridTimeManager object.
+            timeManager: WECGridTime object.
         """
         # Validate software name
         if software not in ['psse', 'pypsa']:

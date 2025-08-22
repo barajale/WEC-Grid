@@ -1,10 +1,11 @@
-# File: src/wecgrid/util/wecgrid_timemanager.py
+# File: src/wecgrid/util/time.py
 
 """Time management and coordination for WEC-Grid simulations.
 
-Provides the WECGridTime dataclass for coordinating simulation time
-across WEC-Grid components including power system modeling, WEC device
-simulations, and data visualization with consistent temporal alignment.
+Provides the :class:`WECGridTime` dataclass for coordinating simulation
+time across WEC-Grid components including power system modeling, WEC
+device simulations, and data visualization with consistent temporal
+alignment.
 """
 
 from dataclasses import dataclass, field
@@ -14,7 +15,7 @@ import pandas as pd
 @dataclass
 class WECGridTime:
     """Centralized time coordination for WEC-Grid simulations.
-    
+
     Coordinates temporal aspects across power system modeling (PSS®E, PyPSA),
     WEC simulations (WEC-Sim), and visualization components. Manages simulation
     time windows, sampling intervals, and ensures cross-platform alignment.
@@ -105,7 +106,7 @@ class WECGridTime:
         self.sim_stop = end_time
 
     def __repr__(self) -> str:
-        """Return concise string representation of the WECGridTime."""
+        """Return concise string representation of the time configuration."""
         return (
             f"WECGridTime:\n"
             f"├─ start_time: {self.start_time}\n"
@@ -113,3 +114,5 @@ class WECGridTime:
             f"├─ num_steps: {self.num_steps} steps\n"
             f"└─ frequency:  {self.freq}"
         )
+
+
