@@ -25,12 +25,18 @@ class AttrDict(dict):
         AttributeError: If the requested attribute/key does not exist.
     """
     def __getattr__(self, name):
+        """Map attribute access to dictionary lookup.
+
+        Raises:
+            AttributeError: If the key is absent.
+        """
         try:
             return self[name]
         except KeyError:
             raise AttributeError(f"'AttrDict' has no attribute '{name}'")
 
     def __setattr__(self, name, value):
+        """Map attribute assignment to setting a dictionary key."""
         self[name] = value
 
 
