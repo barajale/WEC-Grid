@@ -41,5 +41,5 @@ setup(
         "Intended Audience :: Science/Research",
         "Topic :: Scientific/Engineering :: Energy",
     ],
-    python_requires=">=3.9",
+    python_requires=">=3.7",
 )
