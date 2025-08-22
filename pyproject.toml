@@ -7,7 +7,7 @@ name = "wecgrid"
 version = "0.1.0"
 description = "WEC-Grid: A tool for integrating Wave Energy Converter models into power system simulations"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.7"
 authors = [{name = "Alexander Barajas-Ritchie", email = "barajale@oregonstate.edu"}]
 license = {text = "MIT"}
 dependencies = [
@@ -24,15 +24,28 @@ dependencies = [
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Energy",
 ]
 
+[project.urls]
+Homepage = "https://github.com/acep-uaf/WEC-GRID"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+wecgrid = [
+    "util/*.json",
+    "modelers/wec_sim/*.json",
+]
 
