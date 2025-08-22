@@ -74,25 +74,46 @@ class WECSimRunner:
             print(f"Warning: Could not save WEC-Sim config: {e}")
     
     def set_wec_sim_path(self, path: str) -> None:
-        """Configure the WEC-Sim MATLAB framework installation path."""
+        """Configure the WEC-Sim MATLAB framework installation path.
+
+        Args:
+            path (str): Filesystem location of the WEC-Sim MATLAB installation.
+
+        Raises:
+            FileNotFoundError: If the supplied ``path`` does not exist.
+        """
         if not os.path.exists(path):
             raise FileNotFoundError(f"WEC-SIM path does not exist: {path}")
         self.wec_sim_path = path
         self._save_config()
-        
+
     def get_wec_sim_path(self) -> Optional[str]:
-        """Get the currently configured WEC-Sim path."""
+        """Get the currently configured WEC-Sim path.
+
+        Returns:
+            Optional[str]: Absolute path to the WEC-Sim installation or ``None``
+            if no path has been configured.
+        """
         return self.wec_sim_path
-        
+
     def show_config(self) -> None:
-        """Display current WEC-Sim configuration."""
+        """Display current WEC-Sim configuration.
+
+        Prints the currently configured WEC-Sim path along with the location of
+        the configuration file used to persist this setting.
+        """
         print(f"WEC-Sim Configuration:")
         print(f"  Path: {self.wec_sim_path or 'Not configured'}")
         print(f"  Config file: {_CONFIG_FILE}")
         print(f"  Config exists: {os.path.exists(_CONFIG_FILE)}")
-        
+
     def start_matlab(self) -> bool:
-        """Initialize MATLAB engine and configure WEC-Sim framework paths."""
+        """Initialize MATLAB engine and configure WEC-Sim framework paths.
+
+        Returns:
+            bool: ``True`` if the MATLAB engine was started, ``False`` if the
+            engine was already running or the MATLAB Python API is unavailable.
+        """
         
         try:
             import matlab.engine
@@ -123,7 +144,12 @@ class WECSimRunner:
             return False
                 
     def stop_matlab(self) -> bool:
-        """Shutdown the MATLAB engine and free system resources."""
+        """Shutdown the MATLAB engine and free system resources.
+
+        Returns:
+            bool: ``True`` if the engine was stopped, ``False`` if no engine was
+            running.
+        """
         if self.matlab_engine is not None:
             self.matlab_engine.quit()
             self.matlab_engine = None
@@ -135,7 +161,14 @@ class WECSimRunner:
         return False
 
     def sim_results(self, df_power, model, wec_sim_id):
-        """Generate visualization plots for WEC-Sim simulation results."""
+        """Generate visualization plots for WEC-Sim simulation results.
+
+        Args:
+            df_power (pd.DataFrame): Power and optional wave elevation time
+                series produced by WEC-Sim.
+            model (str): Name of the WEC-Sim model used for the simulation.
+            wec_sim_id (int): Database identifier for the WEC-Sim run.
+        """
         if df_power.empty:
             print("No power data available for visualization")
             return
