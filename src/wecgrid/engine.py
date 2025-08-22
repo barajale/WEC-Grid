@@ -322,6 +322,29 @@ class Engine:
                 z = np.zeros_like(hours, dtype=float)
             else:
                 def g(h, mu, sig):
+                    """Return Gaussian weights for given hours.
+
+                    Parameters
+                    ----------
+                    h : array-like
+                        Hours at which the Gaussian is evaluated. Values are
+                        cast to a NumPy array to ensure vectorized
+                        operations.
+                    mu : float
+                        Peak hour (mean) of the Gaussian curve.
+                    sig : float
+                        Spread of the curve (standard deviation).
+
+                    Returns
+                    -------
+                    numpy.ndarray
+                    Array of Gaussian weights corresponding to ``h``.
+
+                    Notes
+                    -----
+                    Intended for shaping daily load profiles by combining
+                    morning and evening peaks.
+                    """
                     h = np.asarray(h, dtype=float)      # <-- belt-and-suspenders
                     return np.exp(-0.5 * ((h - mu)/sig)**2)
 
