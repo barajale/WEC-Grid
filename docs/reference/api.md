@@ -8,37 +8,37 @@ This section provides detailed API documentation for all WEC-Grid classes and fu
 ![mkapi](wecgrid.engine.Engine)
 
 ### Database
-![mkapi](wecgrid.database.wecgrid_db.WECGridDB)
+![mkapi](wecgrid.util.database.WECGridDB)
 
 ### Time Manager
-![mkapi](wecgrid.util.wecgrid_timemanager.WECGridTimeManager)
+![mkapi](wecgrid.util.time.WECGridTime)
 
 ### Plotting
-![mkapi](wecgrid.plot.wecgrid_plotter.WECGridPlotter)
+![mkapi](wecgrid.plot.plot.WECGridPlot)
 
 ## Power System Modelers
 
 ### Base Classes
-![mkapi](wecgrid.modelers.power_system_modeler.PowerSystemModeler)
+![mkapi](wecgrid.modelers.power_system.base.PowerSystemModeler)
 
 ### PSS/E Modeler
-![mkapi](wecgrid.modelers.psse_modeler.PSSEModeler)
+![mkapi](wecgrid.modelers.power_system.psse.PSSEModeler)
 
-### PyPSA Modeler  
-![mkapi](wecgrid.modelers.pypsa_modeler.PyPSAModeler)
+### PyPSA Modeler
+![mkapi](wecgrid.modelers.power_system.pypsa.PyPSAModeler)
 
 ### Grid State
-![mkapi](wecgrid.modelers.grid_state.GridState)
+![mkapi](wecgrid.modelers.power_system.base.GridState)
 
 ## WEC Components
 
 ### WEC Device
-![mkapi](wecgrid.wec.wecdevice.WECDevice)
+![mkapi](wecgrid.wec.device.WECDevice)
 
 ### WEC Farm
-![mkapi](wecgrid.wec.wecfarm.WECFarm)
+![mkapi](wecgrid.wec.farm.WECFarm)
 
 ### WEC-Sim Runner
-![mkapi](wecgrid.wec.wecsim_runner.WECSimRunner)
+![mkapi](wecgrid.modelers.wec_sim.runner.WECSimRunner)
 
-## Utilities
+
