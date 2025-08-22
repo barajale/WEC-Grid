@@ -56,11 +56,17 @@ For the current implementations, WEC-Grid is compatible with PSSe and [WEC-SIM](
    ```bash
    conda activate wec_grid_env
    ```
-5. Install WEC-Grid
+5. Install WEC-Grid (includes `grg-pssedata` for PSS\u00aeE RAW parsing)
    ```bash
    pip install -e .
    ```
-6. Run tests
+6. (Optional) Install extra dependencies
+   ```bash
+   pip install wecgrid[psse]    # PSS\u00aeE API support
+   pip install wecgrid[matlab]  # MATLAB engine integration
+   pip install wecgrid[wecsim]  # WEC-Sim interface
+   ```
+7. Run tests
    ```bash
    pytest /test -v
    ```

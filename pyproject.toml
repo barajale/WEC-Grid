@@ -33,6 +33,13 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Energy",
 ]
 
+[project.optional-dependencies]
+psse = [
+    "pssepath",
+]
+matlab = ["matlabengine"]
+wecsim = ["matlabengine"]
+
 [project.urls]
 Homepage = "https://github.com/acep-uaf/WEC-GRID"
 
