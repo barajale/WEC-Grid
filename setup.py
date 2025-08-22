@@ -15,38 +15,31 @@ setup(
     license="MIT",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
-    include_package_data=True,  # works with MANIFEST.in
+    include_package_data=True,
     package_data={
         "wecgrid": [
-            "data/grid_models/*",
-            "data/wec_models/**/*",
-            "database/*",
-            "modelers/wec_sim/*.m",
+            "util/*.json",
+            "modelers/wec_sim/*.json",
         ]
     },
     install_requires=[
-        "numpy>=1.21,<1.24",
-        "pandas>=1.3,<2.0",
-        "matplotlib>=3.4,<3.7",
-        "seaborn>=0.11,<0.13",
-        # TODO should pin a pyPSA verison 
+        "numpy>=1.21",
+        "pandas>=1.3",
+        "matplotlib>=3.4",
+        "seaborn>=0.11",
         "pypsa",
         "pypower>=5.1.17",
-        "pyrlu>=0.2.1",
-        "ipycytoscape>=1.3.3",
-        "spectate>=1.0.1",
-        "bqplot",
-        # 3.7-only resource loader
-        "importlib_resources>=5.12,<6",
-        "pywin32>=228; platform_system=='Windows'",
-        "ipykernel>=6.0",
+        "grg-pssedata",
+        "tqdm>=4.0",
+        "requests>=2.0",
+        "networkx>=2.5",
     ],
     classifiers=[
-        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Intended Audience :: Science/Research",
         "Topic :: Scientific/Engineering :: Energy",
     ],
-    python_requires="==3.7.*",
+    python_requires=">=3.9",
 )
