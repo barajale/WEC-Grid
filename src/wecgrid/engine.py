@@ -1,3 +1,11 @@
+"""Top-level orchestration for WEC-Grid simulations.
+
+Defines the :class:`Engine` that coordinates WEC farms, power system modelers,
+database access, and visualization utilities. The module links PSS®E and
+PyPSA backends, manages time through :class:`WECGridTime`, and integrates
+WEC-Sim for device-level modeling.
+"""
+
 # src/wecgrid/engine.py
 
 from datetime import datetime
