@@ -1,3 +1,5 @@
+"""Verify MATLAB engine availability."""
+
 def test_matlab():
     """Test MATLAB modules can be imported."""
     import matlab.engine
