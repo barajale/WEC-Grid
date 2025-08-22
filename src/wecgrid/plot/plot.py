@@ -35,8 +35,38 @@ class WECGridPlot:
                           components: Optional[List[str]] = None,
                           title: str = "", ax: Optional[plt.Axes] = None,
                           ylabel: str = "", xlabel: str = "Time"):
-        """
-        Internal helper to plot time-series data for any component.
+        """Internal helper to plot time-series data for any component.
+
+        Args:
+            software (str):
+                Modeling backend available on the engine (e.g., ``"psse"`` or
+                ``"pypsa"``).
+            component_type (str):
+                Grid component group to plot (``"gen"``, ``"bus"``,
+                ``"load"``, ``"line"``, etc.).
+            parameter (str):
+                Name of the time-series parameter to visualize. This must
+                exist within ``<component_type>_t``.
+            components (Optional[List[str]]):
+                Specific components to include. If ``None``, all available
+                components are plotted.
+            title (str):
+                Plot title. When empty, a default title is generated from the
+                ``software``, ``component_type`` and ``parameter`` values.
+            ax (Optional[plt.Axes]):
+                Matplotlib axes on which to draw the plot. A new figure and
+                axes are created when ``None``.
+            ylabel (str):
+                Label for the y-axis. Defaults to ``parameter`` when empty.
+            xlabel (str):
+                Label for the x-axis. Defaults to ``"Time"``.
+
+        Returns:
+            Tuple[plt.Figure, plt.Axes] | Tuple[None, None]:
+                A tuple containing the Matplotlib ``Figure`` and ``Axes`` for
+                the generated plot. Returns ``(None, None)`` when the required
+                data are missing or none of the requested components are
+                available.
         """
         if not hasattr(self.engine, software):
             print(f"Error: Software '{software}' not found in engine.")
