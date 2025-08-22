@@ -8,10 +8,12 @@ results, supporting cross-platform comparison between PSS®E and PyPSA modeling 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Circle
 from matplotlib.lines import Line2D
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 import pandas as pd
 import numpy as np
 import networkx as nx
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional, Union, Tuple
 
 class WECGridPlot:
     """
@@ -33,10 +35,46 @@ class WECGridPlot:
 
     def _plot_time_series(self, software: str, component_type: str, parameter: str,
                           components: Optional[List[str]] = None,
-                          title: str = "", ax: Optional[plt.Axes] = None,
-                          ylabel: str = "", xlabel: str = "Time"):
+                          title: str = "", ax: Optional[Axes] = None,
+                          ylabel: str = "", xlabel: str = "Time") -> Tuple[Optional[Figure], Optional[Axes]]:
         """
-        Internal helper to plot time-series data for any component.
+        Internal helper to plot time-series data for any grid component.
+
+        Parameters
+        ----------
+        software : str
+            Name of the modeling backend (e.g., ``"psse"`` or ``"pypsa"``) from
+            which to retrieve simulation results.
+        component_type : str
+            Component category such as ``"bus"``, ``"gen"``, ``"load"`` or
+            ``"line"``.
+        parameter : str
+            Key within the component time-series mapping specifying which
+            quantity to plot (e.g., ``"p"``, ``"q"``, ``"v_mag"``).
+        components : list[str], optional
+            Specific component names to include. When provided, only columns in
+            the DataFrame matching these names are plotted, allowing targeted
+            filtering of the time-series data.
+        title : str, optional
+            Custom title for the plot.
+        ax : Axes, optional
+            Existing axis on which to draw. A new figure and axis are created if
+            omitted.
+        ylabel : str, optional
+            Label for the y-axis. Defaults to ``parameter`` when not provided.
+        xlabel : str, optional
+            Label for the x-axis. Defaults to ``"Time"``.
+
+        Expected DataFrame Structure
+        ----------------------------
+        ``component_data_t[parameter]`` must be a :class:`pandas.DataFrame`
+        indexed by time with one column per component name.
+
+        Returns
+        -------
+        Tuple[Figure, Axes]
+            The figure and axes containing the plot. If the requested data are
+            unavailable, ``(None, None)`` is returned instead.
         """
         if not hasattr(self.engine, software):
             print(f"Error: Software '{software}' not found in engine.")
