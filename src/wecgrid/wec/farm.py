@@ -65,11 +65,13 @@ class WECFarm:
             database: Database interface for WEC simulation data access.
             time: Time management object for simulation synchronization.
             wec_sim_id (int): Database simulation ID for WEC data retrieval.
-            model (str): WEC device model type ("RM3", etc.).
             bus_location (int): Grid bus number for farm connection.
             connecting_bus (int, optional): Network topology connection bus. Defaults to 1.
+            gen_name (str, optional): Generator name for power system integration. Defaults to ''.
             size (int, optional): Number of WEC devices in farm. Defaults to 1.
-            gen_id (str, optional): Generator ID for power system. Auto-generated if None.
+            farm_id (int, optional): Unique farm identifier. Defaults to None.
+            sbase (float, optional): Base power rating [MVA] for per-unit calculations. Defaults to 100.0.
+            scaling_factor (float, optional): Linear power scaling factor for aggregated output. Defaults to 1.0.
                 
         Raises:
             RuntimeError: If WEC simulation data not found in database.
@@ -80,15 +82,14 @@ class WECFarm:
             ...     farm_name="Newport Array",
             ...     database=db,
             ...     time=time_mgr,
-            ...     sim_id=101,
-            ...     model="RM3",
+            ...     wec_sim_id=101,
             ...     bus_location=14,
             ...     size=5
             ... )
             
         Notes:
             - Creates identical WECDevice objects for all farm devices
-            - Retrieves WEC-Sim data from database using sim_id
+            - Retrieves WEC-Sim data from database using wec_sim_id
             - Sets up per-unit base power from simulation data
         """
         
