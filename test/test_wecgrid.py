@@ -16,10 +16,10 @@ def test_wecgrid_database():
     assert WECGridDB is not None
 
 
-def test_wecgrid_timemanager():
-    """Test time manager can be imported."""
-    from wecgrid.util.time import WECGridTimeManager
-    assert WECGridTimeManager is not None
+def test_wecgrid_time():
+    """Test WECGridTime can be imported."""
+    from wecgrid.util.time import WECGridTime
+    assert WECGridTime is not None
 
 
 def test_wecgrid_plot():

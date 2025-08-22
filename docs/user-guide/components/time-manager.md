@@ -23,4 +23,4 @@ print(f"Simulation duration: {len(snapshots)} time steps")
 
 ## API Reference
 
-![mkapi](wecgrid.util.wecgrid_timemanager.WECGridTimeManager)
+![mkapi](wecgrid.util.time.WECGridTime)
