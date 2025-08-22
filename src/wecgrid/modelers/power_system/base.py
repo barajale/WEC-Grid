@@ -1,4 +1,20 @@
 # src/wecgrid/modelers/power_system/base.py
+"""Core interfaces and data structures for power-system modeling backends.
+
+This module defines the foundational pieces used by all power-system
+modelers within WEC-Grid:
+
+* ``AttrDict`` – a convenience dictionary with attribute-style access for
+  organizing time-series data.
+* ``GridState`` – a dataclass that standardizes snapshot and historical data
+  for buses, generators, lines, and loads.
+* ``PowerSystemModeler`` – an abstract base class specifying the API that
+  backend implementations must provide.
+
+Concrete modelers such as :mod:`psse` and :mod:`pypsa` extend these classes
+to interface with PSS®E and PyPSA, respectively, while adhering to the common
+WEC-Grid modeling interface.
+"""
 
 from abc import ABC, abstractmethod
 from typing import Any, Optional, Dict
