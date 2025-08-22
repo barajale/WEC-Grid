@@ -113,13 +113,16 @@ class WECGridPlot:
         return fig, ax
 
     def gen(self, software: str = 'pypsa', parameter: str = 'p', gen: Optional[List[str]] = None):
-        """
-        Plots a generator parameter for either all generators or a list of generators.
+        """Plot a generator parameter.
 
         Args:
-            software (str): The modeling software to use ('psse' or 'pypsa'). Defaults to 'pypsa'.
-            parameter (str): The generator parameter to plot (e.g., 'p', 'q'). Defaults to 'p'.
-            gens (Optional[List[str]]): A list of generator names to plot. If None, all are plotted.
+            software: The modeling software to use (``"psse"`` or ``"pypsa"``).
+            parameter: Generator parameter to plot (e.g., ``"p"``, ``"q"``).
+            gen: A list of generator names to plot. If ``None``, all generators are shown.
+
+        Returns:
+            tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]: The displayed
+            figure and axes for further customization.
         """
         if parameter == 'p':
             title = f"{software.upper()}: Generator Active Power"
@@ -129,19 +132,25 @@ class WECGridPlot:
             ylabel = "Reactive Power [pu]"
         else:
             print("not a valid parameter")
-            return
-        
-        self._plot_time_series(software, 'gen', parameter, components=gen, title=title, ylabel=ylabel)
+            return None, None
+
+        fig, ax = self._plot_time_series(
+            software, 'gen', parameter, components=gen, title=title, ylabel=ylabel
+        )
         plt.show()
+        return fig, ax
 
     def bus(self, software: str = 'pypsa', parameter: str = 'p', bus: Optional[List[str]] = None):
-        """
-        Plots a bus parameter for either all buses or a list of buses.
+        """Plot a bus parameter.
 
         Args:
-            software (str): The modeling software to use ('psse' or 'pypsa'). Defaults to 'pypsa'.
-            parameter (str): The bus parameter to plot (e.g., 'v_mag', 'angle_deg'). Defaults to 'v_mag'.
-            buses (Optional[List[str]]): A list of bus names to plot. If None, all are plotted.
+            software: The modeling software to use (``"psse"`` or ``"pypsa"``).
+            parameter: Bus parameter to plot (e.g., ``"v_mag"``, ``"angle_deg"``).
+            bus: A list of bus names to plot. If ``None``, all buses are shown.
+
+        Returns:
+            tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]: The displayed
+            figure and axes for further customization.
         """
         if parameter == 'p':
             title = f"{software.upper()}: Bus Active Power (net)"
@@ -157,19 +166,25 @@ class WECGridPlot:
             ylabel = "Angle (degrees)"
         else:
             print("not a valid parameter")
-            return
+            return None, None
 
-        self._plot_time_series(software, 'bus', parameter, components=bus, title=title, ylabel=ylabel)
+        fig, ax = self._plot_time_series(
+            software, 'bus', parameter, components=bus, title=title, ylabel=ylabel
+        )
         plt.show()
+        return fig, ax
 
     def load(self, software: str = 'pypsa', parameter: str = 'p', load: Optional[List[str]] = None):
-        """
-        Plots a load parameter for either all loads or a list of loads.
+        """Plot a load parameter.
 
         Args:
-            software (str): The modeling software to use ('psse' or 'pypsa'). Defaults to 'pypsa'.
-            parameter (str): The load parameter to plot (e.g., 'p', 'q'). Defaults to 'p'.
-            loads (Optional[List[str]]): A list of load names to plot. If None, all are plotted.
+            software: The modeling software to use (``"psse"`` or ``"pypsa"``).
+            parameter: Load parameter to plot (e.g., ``"p"``, ``"q"``).
+            load: A list of load names to plot. If ``None``, all loads are shown.
+
+        Returns:
+            tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]: The displayed
+            figure and axes for further customization.
         """
         if parameter == 'p':
             title = f"{software.upper()}: Load Active Power"
@@ -179,27 +194,38 @@ class WECGridPlot:
             ylabel = "Reactive Power [pu]"
         else:
             print("not a valid parameter")
-            return
-        self._plot_time_series(software, 'load', parameter, components=load, title=title, ylabel=ylabel)
+            return None, None
+
+        fig, ax = self._plot_time_series(
+            software, 'load', parameter, components=load, title=title, ylabel=ylabel
+        )
         plt.show()
+        return fig, ax
 
     def line(self, software: str = 'pypsa', parameter: str = 'line_pct', line: Optional[List[str]] = None):
-        """
-        Plots a line parameter for either all lines or a list of lines.
+        """Plot a line parameter.
 
         Args:
-            software (str): The modeling software to use ('psse' or 'pypsa'). Defaults to 'pypsa'.
-            parameter (str): The load parameter to plot (e.g., 'p', 'q'). Defaults to 'p'.
-            lines (Optional[List[str]]): A list of load names to plot. If None, all are plotted.
+            software: The modeling software to use (``"psse"`` or ``"pypsa"``).
+            parameter: Line parameter to plot. Defaults to ``"line_pct"``.
+            line: A list of line names to plot. If ``None``, all lines are shown.
+
+        Returns:
+            tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]: The displayed
+            figure and axes for further customization.
         """
         if parameter == 'line_pct':
             title = f"{software.upper()}: Line Percent Loading"
             ylabel = "Percent Loading [%]"
         else:
             print("not a valid parameter")
-            return
-        self._plot_time_series(software, 'line', parameter, components=line, title=title, ylabel=ylabel)
+            return None, None
+
+        fig, ax = self._plot_time_series(
+            software, 'line', parameter, components=line, title=title, ylabel=ylabel
+        )
         plt.show()
+        return fig, ax
 
     def sld(self, software: str = 'pypsa', figsize=(14, 10), title=None, save_path=None):
         """Generate single-line diagram using GridState data.
