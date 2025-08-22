@@ -186,12 +186,12 @@ class Engine:
             farm_name (str): Human-readable WEC farm identifier.
             size (int, optional): Number of WEC devices in farm. Defaults to 1.
             wec_sim_id (int, optional): Database simulation ID for WEC data. Defaults to 1.
-            model (str, optional): WEC device model type. Defaults to "RM3".
             bus_location (int, optional): Grid bus for WEC connection. Defaults to 1.
             connecting_bus (int, optional): Network topology connection bus. Defaults to 1.
+            scaling_factor (int, optional): Multiplier applied to WEC power output
+                [unitless]. Defaults to 1.
                 
         Raises:
-            ValueError: If WEC model not supported.
             DatabaseError: If sim_id WEC data not found.
             
         Example:
@@ -202,7 +202,7 @@ class Engine:
         Notes:
             - Farm power scales linearly with device count
             - WEC data sourced from database using sim_id
-            - Generator ID auto-assigned based on farm order
+            - Generator IDs are auto-assigned sequentially based on farm order
             
         TODO:
             - Fix PSS®E generator ID limitation (max 9 farms)
