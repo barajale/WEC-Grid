@@ -65,11 +65,13 @@ class WECFarm:
             database: Database interface for WEC simulation data access.
             time: Time management object for simulation synchronization.
             wec_sim_id (int): Database simulation ID for WEC data retrieval.
-            model (str): WEC device model type ("RM3", etc.).
             bus_location (int): Grid bus number for farm connection.
             connecting_bus (int, optional): Network topology connection bus. Defaults to 1.
+            gen_name (str, optional): Generator name for power system integration. Defaults to ''.
             size (int, optional): Number of WEC devices in farm. Defaults to 1.
-            gen_id (str, optional): Generator ID for power system. Auto-generated if None.
+            farm_id (int, optional): Unique farm identifier. Defaults to None.
+            sbase (float, optional): Base power rating [MVA] for per-unit calculations. Defaults to 100.0.
+            scaling_factor (float, optional): Linear power scaling factor for aggregated output. Defaults to 1.0.
                 
         Raises:
             RuntimeError: If WEC simulation data not found in database.
@@ -80,15 +82,14 @@ class WECFarm:
             ...     farm_name="Newport Array",
             ...     database=db,
             ...     time=time_mgr,
-            ...     sim_id=101,
-            ...     model="RM3",
+            ...     wec_sim_id=101,
             ...     bus_location=14,
             ...     size=5
             ... )
             
         Notes:
             - Creates identical WECDevice objects for all farm devices
-            - Retrieves WEC-Sim data from database using sim_id
+            - Retrieves WEC-Sim data from database using wec_sim_id
             - Sets up per-unit base power from simulation data
         """
         
@@ -479,11 +480,12 @@ class WECFarm:
             timestamp (pd.Timestamp): Simulation time to query for power output.
                 Must exist in the device DataFrame time index. Typically corresponds
                 to grid simulation snapshots at 5-minute intervals.
-                
+
         Returns:
-            float: Total active power output from all farm devices [MW].
-                Sum of individual device outputs at the specified time.
-                Returns 0.0 if no valid data available at timestamp.
+            float: Total active power output from all farm devices in per-unit on
+                the farm's ``sbase``. Sum of individual device outputs at the
+                specified time. Returns 0.0 if no valid data available at
+                timestamp.
                 
         Raises:
             KeyError: If timestamp not found in device data index.
@@ -492,19 +494,19 @@ class WECFarm:
         Example:
             >>> # Get power at specific simulation time
             >>> timestamp = pd.Timestamp("2023-01-01 12:00:00")
-            >>> power = farm.power_at_snapshot(timestamp)
-            >>> print(f"Farm output at noon: {power:.2f} MW")
-            Farm output at noon: 15.75 MW
-            
+            >>> power_pu = farm.power_at_snapshot(timestamp)
+            >>> print(f"Farm output at noon: {power_pu:.4f} pu")
+            Farm output at noon: 0.1575 pu
+
             >>> # Time series power extraction
             >>> time_series = []
             >>> for snapshot in time_manager.snapshots:
-            ...     power = farm.power_at_snapshot(snapshot)
-            ...     time_series.append(power)
-            >>> 
+            ...     power_pu = farm.power_at_snapshot(snapshot)
+            ...     time_series.append(power_pu)
+            >>>
             >>> import matplotlib.pyplot as plt
             >>> plt.plot(time_manager.snapshots, time_series)
-            >>> plt.ylabel("Farm Power Output [MW]")
+            >>> plt.ylabel("Farm Power Output [pu]")
             
         Power Aggregation:
             - **Linear summation**: Total = Σ(device_power[i] at timestamp)
@@ -543,6 +545,8 @@ class WECFarm:
             - **Capacity factor**: Typically 20-40% for ocean wave resources
             
         Notes:
+            - Output is in per-unit on the farm's ``sbase``; multiply by
+              ``sbase`` for MW
             - Power output includes WEC device efficiency and control effects
             - All devices share identical profiles (same wave field assumption)
             - Negative power values possible during reactive conditions
@@ -557,8 +561,8 @@ class WECFarm:
         total_power = 0.0
         for device in self.wec_devices:
             if (
-                device.dataframe is not None 
-                and not device.dataframe.empty 
+                device.dataframe is not None
+                and not device.dataframe.empty
                 and timestamp in device.dataframe.index
             ):
                 power = device.dataframe.at[timestamp, "p"]

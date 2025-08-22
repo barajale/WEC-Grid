@@ -8,10 +8,12 @@ results, supporting cross-platform comparison between PSS®E and PyPSA modeling 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Circle
 from matplotlib.lines import Line2D
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 import pandas as pd
 import numpy as np
 import networkx as nx
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional, Union, Tuple
 
 class WECGridPlot:
     """

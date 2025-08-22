@@ -31,9 +31,26 @@ class WECSimRunner:
         matlab_engine (matlab.engine.MatlabEngine, optional): Active MATLAB engine.
     """
     def __init__(self, database: WECGridDB):
-        """Initialize WEC-Sim runner with database connection."""
+        """Initialize a WEC-Sim runner tied to a database connection.
+
+        Args:
+            database (WECGridDB): Interface used to store and retrieve
+                simulation data.
+
+        Attributes:
+            wec_sim_path (Optional[str]): Location of the WEC-Sim MATLAB
+                installation. Defaults to ``None`` and may be populated from
+                configuration.
+            matlab_engine (Optional[matlab.engine.MatlabEngine]): Handle to the
+                MATLAB engine. ``None`` until :meth:`start_matlab` is called.
+
+        Side Effects:
+            Loads ``wecsim_config.json`` to populate ``wec_sim_path`` if a
+            configuration exists.
+        """
         self.wec_sim_path: Optional[str] = None
         self.database: WECGridDB = database
+        self.matlab_engine = None
         self._load_config()
     
     def _load_config(self) -> None:
@@ -83,9 +100,6 @@ class WECSimRunner:
             print("MATLAB python API not installed. ")
             print("https://www.mathworks.com/help/matlab/matlab_external/install-the-matlab-engine-for-python.html")
             return False
-        self.matlab_engine: Optional[matlab.engine.MatlabEngine] = None
-        
-        
         if self.matlab_engine is None:
             print(f"Starting MATLAB Engine... ", end='')
             self.matlab_engine = matlab.engine.start_matlab()
