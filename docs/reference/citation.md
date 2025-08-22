@@ -5,38 +5,39 @@
 If you use WEC-Grid in your research, please cite:
 
 ```bibtex
-@software{wecgrid2024,
-  title={WEC-Grid: Integrating Wave Energy Converter Models into Power System Simulations},
-  author={[Your Name]},
-  year={2024},
-  url={https://github.com/acep/WEC-GRID},
-  institution={Alaska Center for Energy and Power, University of Alaska Fairbanks}
+@software{barajas_ritchie_wec_grid_2024,
+  title   = {WEC-Grid: Integrating Wave Energy Converter Models into Power System Simulations},
+  author  = {Alexander Barajas-Ritchie},
+  year    = {2024},
+  url     = {https://github.com/acep-uaf/WEC-Grid},
+  institution = {Alaska Center for Energy and Power, University of Alaska Fairbanks}
 }
 ```
 
 ## Funding Acknowledgment
 
-This work was supported by [funding source information].
+This work was supported by the U.S. Department of Energy Office of Energy Efficiency and Renewable Energy, Water Power Technologies Office (Grant #DE-EE0009445), the University of Alaska Fairbanks, and the Pacific Northwest National Laboratory.
 
 ## Related Publications
 
-[List any papers or publications that use or describe WEC-Grid]
+Currently in development. Please cite the software directly.
 
 ## Third-Party Acknowledgments
 
 WEC-Grid builds upon several open-source projects:
 
-- **WEC-Sim**: Wave Energy Converter Simulator
-- **PyPSA**: Python for Power System Analysis  
-- **PSS®E**: Power System Simulator for Engineering
-- **Pandas**: Data analysis and manipulation library
-- **NumPy**: Numerical computing library
-- **Matplotlib**: Plotting library
+- **WEC-Sim** – Wave Energy Converter Simulator
+- **PyPSA** – Python for Power System Analysis
+- **PSS®E** – Power System Simulator for Engineering
+- **Pandas** – Data analysis and manipulation library
+- **NumPy** – Numerical computing library
+- **Matplotlib** – Plotting library
 
 ## Contact
 
 For questions about WEC-Grid or collaboration opportunities:
 
-- **Primary Contact**: [Your contact information]
+- **Primary Contact**: barajale@oregonstate.edu
 - **Institution**: Alaska Center for Energy and Power
-- **GitHub**: https://github.com/acep/WEC-GRID
+- **GitHub**: https://github.com/acep-uaf/WEC-GRID
+

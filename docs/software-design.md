@@ -35,4 +35,12 @@ SQLite database with structured storage for simulation metadata and time-series 
 
 ## Workflow
 
-[Include your flowchart and describe the typical simulation workflow]
+A typical study follows these steps:
+
+1. Load a grid case with `engine.case()`.
+2. Initialize power system modelers using `engine.load()`.
+3. Add WEC farms via `engine.apply_wec()`.
+4. Run the simulation with `engine.simulate()`.
+5. Review results using the built-in plotting tools.
+
+
