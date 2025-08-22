@@ -35,46 +35,40 @@ class WECGridPlot:
 
     def _plot_time_series(self, software: str, component_type: str, parameter: str,
                           components: Optional[List[str]] = None,
-                          title: str = "", ax: Optional[Axes] = None,
-                          ylabel: str = "", xlabel: str = "Time") -> Tuple[Optional[Figure], Optional[Axes]]:
-        """
-        Internal helper to plot time-series data for any grid component.
+                          title: str = "", ax: Optional[plt.Axes] = None,
+                          ylabel: str = "", xlabel: str = "Time"):
+        """Internal helper to plot time-series data for any component.
 
-        Parameters
-        ----------
-        software : str
-            Name of the modeling backend (e.g., ``"psse"`` or ``"pypsa"``) from
-            which to retrieve simulation results.
-        component_type : str
-            Component category such as ``"bus"``, ``"gen"``, ``"load"`` or
-            ``"line"``.
-        parameter : str
-            Key within the component time-series mapping specifying which
-            quantity to plot (e.g., ``"p"``, ``"q"``, ``"v_mag"``).
-        components : list[str], optional
-            Specific component names to include. When provided, only columns in
-            the DataFrame matching these names are plotted, allowing targeted
-            filtering of the time-series data.
-        title : str, optional
-            Custom title for the plot.
-        ax : Axes, optional
-            Existing axis on which to draw. A new figure and axis are created if
-            omitted.
-        ylabel : str, optional
-            Label for the y-axis. Defaults to ``parameter`` when not provided.
-        xlabel : str, optional
-            Label for the x-axis. Defaults to ``"Time"``.
+        Args:
+            software (str):
+                Modeling backend available on the engine (e.g., ``"psse"`` or
+                ``"pypsa"``).
+            component_type (str):
+                Grid component group to plot (``"gen"``, ``"bus"``,
+                ``"load"``, ``"line"``, etc.).
+            parameter (str):
+                Name of the time-series parameter to visualize. This must
+                exist within ``<component_type>_t``.
+            components (Optional[List[str]]):
+                Specific components to include. If ``None``, all available
+                components are plotted.
+            title (str):
+                Plot title. When empty, a default title is generated from the
+                ``software``, ``component_type`` and ``parameter`` values.
+            ax (Optional[plt.Axes]):
+                Matplotlib axes on which to draw the plot. A new figure and
+                axes are created when ``None``.
+            ylabel (str):
+                Label for the y-axis. Defaults to ``parameter`` when empty.
+            xlabel (str):
+                Label for the x-axis. Defaults to ``"Time"``.
 
-        Expected DataFrame Structure
-        ----------------------------
-        ``component_data_t[parameter]`` must be a :class:`pandas.DataFrame`
-        indexed by time with one column per component name.
-
-        Returns
-        -------
-        Tuple[Figure, Axes]
-            The figure and axes containing the plot. If the requested data are
-            unavailable, ``(None, None)`` is returned instead.
+        Returns:
+            Tuple[plt.Figure, plt.Axes] | Tuple[None, None]:
+                A tuple containing the Matplotlib ``Figure`` and ``Axes`` for
+                the generated plot. Returns ``(None, None)`` when the required
+                data are missing or none of the requested components are
+                available.
         """
         if not hasattr(self.engine, software):
             print(f"Error: Software '{software}' not found in engine.")
