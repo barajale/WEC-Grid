@@ -2,19 +2,19 @@
 
 SQLite database interface for WEC-Grid simulation data management, including 
 time series storage, configuration persistence, and result archival.
-
-
 """
 
+# Standard library
+import json
 import os
+import shutil
 import sqlite3
 from contextlib import contextmanager
-from typing import Optional, List
-import pandas as pd
-import json
-import requests
-import shutil
 from pathlib import Path
+from typing import List, Optional
+
+# Third-party
+import pandas as pd
 
 def get_database_config():
     """Load database configuration from JSON file.

@@ -5,13 +5,17 @@ This module provides the interface between WEC-Grid and WEC-Sim for high-fidelit
 wave energy converter simulations using MATLAB engine integration.
 """
 
+# Standard library
+import io
+import json
 import os
 import random
-import json
-import io
-
-import matplotlib.pyplot as plt
 from typing import Optional
+
+# Third-party
+import matplotlib.pyplot as plt
+
+# Local
 from wecgrid.util import WECGridDB
 
 # Configuration file path

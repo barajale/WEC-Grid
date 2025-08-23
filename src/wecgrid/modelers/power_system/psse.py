@@ -2,20 +2,18 @@
 PSS®E Modeler
 """
 
-# Standard Libraries
+# Standard library
+import contextlib
 import os
 import sys
-import contextlib
-from typing import Any, List, Optional, Dict
+from collections import defaultdict
 from datetime import datetime
-from collections import defaultdict
+from typing import Any, Dict, List, Optional
 
-# 3rd party
+# Third-party
 import pandas as pd
-from tqdm import tqdm
-from collections import defaultdict
 
-# Local imports
+# Local
 from .base import PowerSystemModeler, GridState
 from ...wec.farm import WECFarm
 
@@ -370,7 +368,8 @@ class PSSEModeler(PowerSystemModeler):
         """
         
 
-        for snapshot in tqdm(self.engine.time.snapshots, desc="PSS®E Simulating", unit="step"):
+        #for snapshot in tqdm(self.engine.time.snapshots, desc="PSS®E Simulating", unit="step"):
+        for snapshot in self.engine.time.snapshots:
             for farm in self.engine.wec_farms:
                 power = farm.power_at_snapshot(snapshot) # pu sbase
                 ierr = self.psspy.machine_chng_4(

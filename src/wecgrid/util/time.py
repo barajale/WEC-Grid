@@ -25,7 +25,7 @@ class WECGridTime:
             date at midnight.
         num_steps (int): Number of simulation time steps. Defaults to 288
             (24 hours at 5-minute intervals).
-        freq (str): Pandas frequency string for time intervals. Defaults to "5T"
+        freq (str): Pandas frequency string for time intervals. Defaults to "5min"
             (5-minute intervals).
             
         sim_stop (datetime): Calculated simulation end timestamp.
@@ -45,14 +45,14 @@ class WECGridTime:
         >>> time_mgr = WECGridTime(
         ...     start_time=datetime(2023, 6, 15, 0, 0, 0),
         ...     sim_length=144,  # 12 hours
-        ...     freq="5T"
+        ...     freq="5min"
         ... )
         >>> print(f"Start: {time_mgr.start_time}")
     """
     start_time: datetime = field(default_factory=lambda: datetime.now().replace(hour=0, minute=0, second=0, microsecond=0))
     #sim_length: int = 288
     num_steps: int = 288
-    freq: str = "5T"
+    freq: str = "5min"
     delta_time: int = 300  # seconds
 
     def __post_init__(self):
