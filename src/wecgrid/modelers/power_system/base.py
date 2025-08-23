@@ -16,12 +16,17 @@ to interface with PSS®E and PyPSA, respectively, while adhering to the common
 WEC-Grid modeling interface.
 """
 
+# Standard library
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Dict
-from datetime import datetime        # <- use datetime to match PSSEModeler
-import pandas as pd
-from dataclasses import dataclass, field
 from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, Optional
+
+# Third-party
+import pandas as pd
+
+# Local
 from ...wec.farm import WECFarm
 
 

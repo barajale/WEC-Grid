@@ -6,45 +6,20 @@ PyPSA backends, manages time through :class:`WECGridTime`, and integrates
 WEC-Sim for device-level modeling.
 """
 
-# src/wecgrid/engine.py
-
+# Standard library
 from datetime import datetime
-from typing import List, Optional, Dict
-import os
-import pandas as pd
-import numpy as np
-
 from pathlib import Path
+from typing import Dict, List, Optional
 
-from typing import Union
-
-
-# from wecgrid.modelers import PSSEModeler, PyPSAModeler
-# from wecgrid.plot import WECGridPlotter
-# from wecgrid.wec import WECFarm, WECSimRunner
-# from wecgrid.util import WECGridTime, WECGridDB
-
-
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-import pandas as pd
-
-
-# TODO figure out wec-sim source "wec_sim": "C:/Users/alexb/research/WEC-Sim",y
-
-from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Union
-import os
-import pandas as pd
+# Third-party
 import numpy as np
-from pathlib import Path
-from dataclasses import dataclass, field
+import pandas as pd
 
-from wecgrid.util.database import WECGridDB
+# Local
 from wecgrid.modelers import PSSEModeler, PyPSAModeler
 from wecgrid.plot import WECGridPlot
+from wecgrid.util import WECGridDB, WECGridTime
 from wecgrid.wec import WECFarm, WECSimRunner
-from wecgrid.util import WECGridTime, WECGridDB
 
 
 class Engine:

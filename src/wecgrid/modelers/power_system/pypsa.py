@@ -1,45 +1,33 @@
 """
-PyPSA Wrapper Module
+PyPSA Modeler Module
 
 This module provides a wrapper class for PyPSA (Python for Power System Analysis) functionality,
 specifically designed for Wave Energy Converter (WEC) integration into power systems.
 
 Classes:
-    pyPSAWrapper: Main class for managing PyPSA network operations with WEC integration
+    PyPSAModeler: Main class for managing PyPSA network operations with WEC integration
 """
 
-# Standard Libraries
-import os
-import sys
-from datetime import datetime, timezone, timedelta
+# Standard library
 import contextlib
 import io
 import logging
-import contextlib
-
-# 3rd Party Libraries
-import pypsa
-import pandas as pd
-import cmath
-import numpy as np
-import matlab.engine
-import pypower.api as pypower
-from pandas.tseries.offsets import DateOffset
-from math import inf
-from typing import Optional, Dict, Any
 from collections import defaultdict
+from datetime import datetime
+from math import inf
+from typing import Any, Dict, Optional
 
-from tqdm import tqdm
+# Third-party
+import numpy as np
+import pandas as pd
+import pypsa
 
-
+# External packages
 import grg_pssedata.io as grgio
 from grg_pssedata.io import parse_psse_case_file
-from typing import Any
 
-
+# Local
 from .base import PowerSystemModeler, GridState
-# import PyPSA here
-# e.g.: import pypsa
 
 class PyPSAModeler(PowerSystemModeler):
     """PyPSA power system modeling interface.
@@ -536,7 +524,6 @@ class PyPSAModeler(PowerSystemModeler):
             Power Flow Solution:
             - Solves power flow at each time step
             - Captures grid state snapshots for analysis
-            - Provides progress indication via tqdm
         """
         # map: bus number (str) -> load name (index)
         bus_to_load = self.network.loads['bus'].astype(str).to_dict()
@@ -544,7 +531,8 @@ class PyPSAModeler(PowerSystemModeler):
         # (if you prefer your original naming)
         bus_to_load = {str(bus): name for name, bus in self.network.loads['bus'].items()}
 
-        for snapshot in tqdm(self.engine.time.snapshots, desc="PyPSA Simulating", unit="step"):
+        #for snapshot in tqdm(self.engine.time.snapshots, desc="PyPSA Simulating", unit="step"):
+        for snapshot in self.engine.time.snapshots:
             # WEC generators
             for farm in self.engine.wec_farms:
                 power = farm.power_at_snapshot(snapshot) * self.sbase  # pu -> MW 

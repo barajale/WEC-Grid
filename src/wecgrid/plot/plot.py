@@ -5,15 +5,18 @@ This module provides comprehensive visualization capabilities for WEC-GRID simul
 results, supporting cross-platform comparison between PSS®E and PyPSA modeling backends.
 """
 
+# Standard library
+from typing import Any, List, Optional, Tuple, Union
+
+# Third-party
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle, Circle
-from matplotlib.lines import Line2D
-from matplotlib.figure import Figure
-from matplotlib.axes import Axes
-import pandas as pd
-import numpy as np
 import networkx as nx
-from typing import Any, List, Optional, Union, Tuple
+import numpy as np
+import pandas as pd
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
+from matplotlib.patches import Circle, Rectangle
 
 class WECGridPlot:
     """

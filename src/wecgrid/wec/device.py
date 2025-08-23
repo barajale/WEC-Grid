@@ -7,10 +7,13 @@ parameters, and simulation metadata. WECDevice objects form the building blocks
 of WEC farms in power system studies.
 """
 
+# Standard library
 from dataclasses import dataclass, field
-from typing import Optional, Any, Callable
-import pandas as pd
 from datetime import datetime
+from typing import Any, Callable, Optional
+
+# Third-party
+import pandas as pd
 
 @dataclass
 class WECDevice:
