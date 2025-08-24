@@ -107,6 +107,7 @@ class GridState:
     """
     
     software: str = ""
+    case: str = ""
     bus: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
     gen: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
     line: pd.DataFrame = field(default_factory=lambda: pd.DataFrame())
@@ -130,30 +131,54 @@ class GridState:
                 
         Example:
             >>> print(grid)
-            GridState:
-            ├─ bus:   14
-            │   └─ time-series: v_mag, angle_deg, p, q
-            ├─ gen:   5
-            │   └─ time-series: p, q, status
-            ├─ line:  20
-            │   └─ time-series: line_pct, status
-            └─ load:  11
-                └─ time-series: p, q, status
+            GridState (psse):
+            ├─ Components:
+            │   ├─ bus:   14 components
+            │   ├─ gen:   5 components  
+            │   ├─ line:  20 components
+            │   └─ load:  11 components
+            ├─ Time-series Data:
+            │   ├─ bus:   v_mag, angle_deg, p, q (120 snapshots)
+            │   ├─ gen:   p, q, status (120 snapshots)
+            │   ├─ line:  line_pct, status (120 snapshots)
+            │   └─ load:  p, q, status (120 snapshots)
+            └─ Backend: PSS®E simulation model
         """
-        def ts_keys(d):
-            """Format available time-series keys for display."""
-            return ", ".join(d.keys()) if d else "none"
+        def ts_info(component_t):
+            """Format time-series information with variable count and snapshot count."""
+            if not component_t:
+                return "none"
+            variables = list(component_t.keys())
+            if variables:
+                # Get snapshot count from first variable's DataFrame
+                snapshot_count = len(component_t[variables[0]]) if len(component_t[variables[0]]) > 0 else 0
+                var_str = ", ".join(variables)
+                return f"{var_str} ({snapshot_count} snapshots)"
+            return "none"
+        
+        def backend_name(software):
+            """Convert software code to descriptive name."""
+            names = {
+                'psse': 'PSS®E Modeler',
+                'pypsa': 'PyPSA Modeler', 
+                '': 'No backend specified'
+            }
+            return names.get(software.lower(), f'{software} simulation modeler')
 
         return (
-            "GridState:\n"
-            f"├─ bus:   {len(self.bus)}\n"
-            f"│   └─ time-series: {ts_keys(self.bus_t)}\n"
-            f"├─ gen:   {len(self.gen)}\n"
-            f"│   └─ time-series: {ts_keys(self.gen_t)}\n"
-            f"├─ line:  {len(self.line)}\n"
-            f"│   └─ time-series: {ts_keys(self.line_t)}\n"
-            f"└─ load:  {len(self.load)}\n"
-            f"    └─ time-series: {ts_keys(self.load_t)}"
+            f"GridState:\n"
+            f"├─ Components:\n"
+            f"│   ├─ bus:   {len(self.bus)} components\n"
+            f"│   ├─ gen:   {len(self.gen)} components\n"
+            f"│   ├─ line:  {len(self.line)} components\n"
+            f"│   └─ load:  {len(self.load)} components\n"
+            f"├─ Time-series Data:\n"
+            f"│   ├─ bus:   {ts_info(self.bus_t)}\n"
+            f"│   ├─ gen:   {ts_info(self.gen_t)}\n"
+            f"│   ├─ line:  {ts_info(self.line_t)}\n"
+            f"│   └─ load:  {ts_info(self.load_t)}\n"
+            f"├─ Case: {self.case}\n"
+            f"└─ Backend: {backend_name(self.software)}"
         )
 
     def update(self, component: str, timestamp: pd.Timestamp, df: pd.DataFrame):
@@ -198,7 +223,7 @@ class GridState:
         | q         | Net reactive power injection (Gen − Load)   | float  | pu               | **S_base** (MVA)       |
         | v_mag     | Voltage magnitude                           | float  | pu               | **V_base** (kV LL)     |
         | angle_deg | Voltage angle                               | float  | degrees          | —                      |
-        | Vbase     | Bus nominal voltage (line-to-line)          | float  | kV               | —                      |
+        | vbase     | Bus nominal voltage (line-to-line)          | float  | kV               | —                      |
 
         **Generator DataFrame** (`df_type="GEN"`)
 
@@ -370,8 +395,75 @@ class PowerSystemModeler(ABC):
         """
         self.engine = engine
         self.grid = GridState()
+        self.grid.case = engine.case_name
         self.sbase: Optional[float] = None
         
+    def __repr__(self) -> str:
+        """Return a formatted string representation of the PowerSystemModeler.
+        
+        Provides summary of modeler state, case information, and grid statistics.
+        
+        Returns:
+            str: Multi-line string representation showing modeler configuration and status.
+            
+        Example:
+            >>> print(modeler)
+            PSSEModeler:
+            ├─ Case: IEEE_30_bus.raw (100.0 MVA base)
+            ├─ Grid Components: 30 buses, 6 generators, 21 loads, 41 lines
+            ├─ Time Configuration: 2025-08-23 10:00:00 → 2025-08-23 12:00:00 (5 min steps)
+            ├─ WEC Farms: 2 farms, 15 total devices
+            └─ Status: ✓ Initialized, ✓ Power flow converged
+        """
+        # Get class name (e.g., "PSSEModeler", "PyPSAModeler")
+        class_name = self.__class__.__name__
+        
+        # Case information
+        case_name = getattr(self.engine, 'case_name', 'No case loaded')
+        if hasattr(self.engine, 'case_file') and self.engine.case_file:
+            case_file = str(self.engine.case_file).split('\\')[-1].split('/')[-1]  # Get filename
+            case_name = case_file
+        
+        sbase_info = f" ({self.sbase} MVA base)" if self.sbase else ""
+        case_line = f"├─ Case: {case_name}{sbase_info}"
+        
+        # Grid component counts
+        grid_line = (f"├─ Grid Components: {len(self.grid.bus)} buses, "
+                    f"{len(self.grid.gen)} generators, {len(self.grid.load)} loads, "
+                    f"{len(self.grid.line)} lines")
+        
+        # Time configuration
+        time_line = "├─ Time Configuration: Not configured"
+        if hasattr(self.engine, 'time') and self.engine.time:
+            time_mgr = self.engine.time
+            if hasattr(time_mgr, 'start_time') and hasattr(time_mgr, 'delta_time'):
+                start = getattr(time_mgr, 'start_time', 'Unknown')
+                end = getattr(time_mgr, 'sim_stop', 'Unknown')
+                delta = getattr(time_mgr, 'delta_time', 'Unknown')
+                
+                if start != 'Unknown' and end != 'Unknown':
+                    time_line = f"├─ Time Configuration: {start} → {end} ({delta} min steps)"
+                elif start != 'Unknown':
+                    time_line = f"├─ Time Configuration: Starting {start} ({delta} min steps)"
+        
+        # WEC farm information
+        wec_line = "├─ WEC Farms: None"
+        if hasattr(self.engine, 'wec_farms') and self.engine.wec_farms:
+            num_farms = len(self.engine.wec_farms)
+            total_devices = sum(len(farm.devices) for farm in self.engine.wec_farms.values())
+            wec_line = f"├─ WEC Farms: {num_farms} farms, {total_devices} total devices"
+        
+        # Status indicators (this would be implemented by subclasses with more specific info)
+        status_line = "└─ Status: ⚠ Not initialized"
+        
+        return (
+            f"{class_name}:\n"
+            f"{case_line}\n"
+            f"{grid_line}\n"
+            f"{time_line}\n"
+            f"{wec_line}\n"
+            f"{status_line}"
+        )
 
     @abstractmethod
     def init_api(self) -> bool:

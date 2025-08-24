@@ -76,22 +76,22 @@ class PyPSAModeler(PowerSystemModeler):
         self.grid.software = "pypsa"
     
 
-    def __repr__(self) -> str:
-        """String representation of PyPSA model with network summary.
+    # def __repr__(self) -> str:
+    #     """String representation of PyPSA model with network summary.
         
-        Returns:
-            str: Tree-style summary with case name, component counts, and system base [MVA].
-        """
-        return (
-            f"pypsa:\n"
-            f"├─ case: {self.engine.case_name}\n"
-            f"├─ buses: {len(self.grid.bus)}\n"
-            f"├─ generators: {len(self.grid.gen)}\n"
-            f"├─ loads: {len(self.grid.load)}\n"
-            f"└─ lines: {len(self.grid.line)}"
-            f"\n"
-            f"Sbase: {self.sbase} MVA"
-        )
+    #     Returns:
+    #         str: Tree-style summary with case name, component counts, and system base [MVA].
+    #     """
+    #     return (
+    #         f"pypsa:\n"
+    #         f"├─ case: {self.engine.case_name}\n"
+    #         f"├─ buses: {len(self.grid.bus)}\n"
+    #         f"├─ generators: {len(self.grid.gen)}\n"
+    #         f"├─ loads: {len(self.grid.load)}\n"
+    #         f"└─ lines: {len(self.grid.line)}"
+    #         f"\n"
+    #         f"Sbase: {self.sbase} MVA"
+    #     )
         
 
     def init_api(self) -> bool:
@@ -634,7 +634,7 @@ class PyPSAModeler(PowerSystemModeler):
             "q":         (q_MVAr / self.sbase).astype(float),
             "v_mag":     vmag_pu.astype(float),
             "angle_deg": np.degrees(vang_rad.astype(float)),
-            "Vbase":      buses.get("v_nom", pd.Series(np.nan, index=buses.index)).astype(float),
+            "vbase":      buses.get("v_nom", pd.Series(np.nan, index=buses.index)).astype(float),
         })
 
         df.attrs["df_type"] = "BUS"

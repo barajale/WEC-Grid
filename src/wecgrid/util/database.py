@@ -10,6 +10,7 @@ import os
 import shutil
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -300,8 +301,7 @@ class WECGridDB:
                     sim_end_time TEXT,
                     delta_time INTEGER,
                     notes TEXT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(case_name, psse, pypsa, sim_start_time)
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             
@@ -606,6 +606,9 @@ class WECGridDB:
         Automatically detects and stores data from all active software backends
         (PSS®E, PyPSA) and WEC farms present in the engine object.
         
+        Always creates a new simulation entry - no duplicate checking.
+        Users can manage simulation names as needed.
+        
         Args:
             sim_name (str): User-friendly simulation name.
             notes (str, optional): Simulation notes.
@@ -686,44 +689,28 @@ class WECGridDB:
                         sbase_mva = 100.0  # Default fallback
                         print(f"  Using default sbase: {sbase_mva} MVA")
         
-        # Get time information
+        # Get time information from simulation 
         sim_start_time = timeManager.start_time.isoformat()
         sim_end_time = getattr(timeManager, 'sim_stop', None)
         if sim_end_time:
             sim_end_time = sim_end_time.isoformat()
         delta_time = timeManager.delta_time
         
-        # Create grid simulation record (handle duplicates)
+        # Create new grid simulation record (always create new entry)
         with self.connection() as conn:
             cursor = conn.cursor()
             
-            # Check if simulation already exists
+            # Insert new simulation - always create new entry
             cursor.execute("""
-                SELECT grid_sim_id FROM grid_simulations 
-                WHERE case_name = ? AND psse = ? AND pypsa = ? AND sim_start_time = ?
-            """, (case_name, psse_used, pypsa_used, sim_start_time))
+                INSERT INTO grid_simulations 
+                (sim_name, case_name, psse, pypsa, sbase_mva, sim_start_time, 
+                 sim_end_time, delta_time, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (sim_name, case_name, psse_used, pypsa_used, sbase_mva, sim_start_time,
+                  sim_end_time, delta_time, notes))
             
-            existing_sim = cursor.fetchone()
-            if existing_sim:
-                print(f"Warning: Simulation already exists with ID {existing_sim[0]}. Updating notes and returning existing ID.")
-                # Update the notes for the existing simulation
-                cursor.execute("""
-                    UPDATE grid_simulations 
-                    SET sim_name = ?, notes = ?, created_at = CURRENT_TIMESTAMP
-                    WHERE grid_sim_id = ?
-                """, (sim_name, notes, existing_sim[0]))
-                grid_sim_id = existing_sim[0]
-            else:
-                # Insert new simulation
-                cursor.execute("""
-                    INSERT INTO grid_simulations 
-                    (sim_name, case_name, psse, pypsa, sbase_mva, sim_start_time, 
-                     sim_end_time, delta_time, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (sim_name, case_name, psse_used, pypsa_used, sbase_mva, sim_start_time,
-                      sim_end_time, delta_time, notes))
-                
-                grid_sim_id = cursor.lastrowid
+            grid_sim_id = cursor.lastrowid
+            print(f"Created new simulation with ID: {grid_sim_id}")
         
         # Store data for each valid software
         valid_softwares = []
@@ -789,17 +776,17 @@ class WECGridDB:
                     
                     # Create bus data for this timestamp
                     if hasattr(grid_state_obj, 'bus') and not grid_state_obj.bus.empty:
-                        for bus_id, row in grid_state_obj.bus.iterrows():
+                        for idx, row in grid_state_obj.bus.iterrows():
                             cursor.execute(f"""
                                 INSERT OR REPLACE INTO {table_prefix}bus_results 
                                 (grid_sim_id, timestamp, bus, bus_name, type, p, q, v_mag, angle_deg, vbase)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (grid_sim_id, timestamp_str, bus_id, row.get('bus_name'), row.get('type'),
-                                  self._get_timeseries_value(grid_state_obj.bus_t, 'p', bus_id, timestamp),
-                                  self._get_timeseries_value(grid_state_obj.bus_t, 'q', bus_id, timestamp),
-                                  self._get_timeseries_value(grid_state_obj.bus_t, 'v_mag', bus_id, timestamp),
-                                  self._get_timeseries_value(grid_state_obj.bus_t, 'angle_deg', bus_id, timestamp),
-                                  row.get('Vbase')))
+                            """, (grid_sim_id, timestamp_str, row.get("bus"), row.get('bus_name'), row.get('type'),
+                                  self._get_timeseries_value(grid_state_obj.bus_t, 'p', row.get("bus"), timestamp),
+                                  self._get_timeseries_value(grid_state_obj.bus_t, 'q', row.get("bus"), timestamp),
+                                  self._get_timeseries_value(grid_state_obj.bus_t, 'v_mag', row.get("bus"), timestamp),
+                                  self._get_timeseries_value(grid_state_obj.bus_t, 'angle_deg', row.get("bus"), timestamp),
+                                  row.get('vbase')))
             
             # Store generator time-series data
             if hasattr(grid_state_obj, 'gen_t') and grid_state_obj.gen_t:
@@ -807,16 +794,16 @@ class WECGridDB:
                     timestamp_str = timestamp.isoformat()
                     
                     if hasattr(grid_state_obj, 'gen') and not grid_state_obj.gen.empty:
-                        for gen_id, row in grid_state_obj.gen.iterrows():
+                        for idx, row in grid_state_obj.gen.iterrows():
                             cursor.execute(f"""
                                 INSERT OR REPLACE INTO {table_prefix}generator_results 
                                 (grid_sim_id, timestamp, gen, gen_name, bus, p, q, mbase, status)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (grid_sim_id, timestamp_str, gen_id, row.get('gen_name'), row.get('bus'),
-                                  self._get_timeseries_value(grid_state_obj.gen_t, 'p', gen_id, timestamp),
-                                  self._get_timeseries_value(grid_state_obj.gen_t, 'q', gen_id, timestamp),
+                            """, (grid_sim_id, timestamp_str, row.get('gen'), row.get('gen_name'), row.get('bus'),
+                                  self._get_timeseries_value(grid_state_obj.gen_t, 'p', row.get('gen'), timestamp),
+                                  self._get_timeseries_value(grid_state_obj.gen_t, 'q', row.get('gen'), timestamp),
                                   row.get('Mbase'),
-                                  self._get_timeseries_value(grid_state_obj.gen_t, 'status', gen_id, timestamp)))
+                                  self._get_timeseries_value(grid_state_obj.gen_t, 'status', row.get('gen'), timestamp)))
             
             # Store load time-series data
             if hasattr(grid_state_obj, 'load_t') and grid_state_obj.load_t:
@@ -824,15 +811,15 @@ class WECGridDB:
                     timestamp_str = timestamp.isoformat()
                     
                     if hasattr(grid_state_obj, 'load') and not grid_state_obj.load.empty:
-                        for load_id, row in grid_state_obj.load.iterrows():
+                        for idx, row in grid_state_obj.load.iterrows():
                             cursor.execute(f"""
                                 INSERT OR REPLACE INTO {table_prefix}load_results 
                                 (grid_sim_id, timestamp, load, load_name, bus, p, q, status)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (grid_sim_id, timestamp_str, load_id, row.get('load_name'), row.get('bus'),
-                                  self._get_timeseries_value(grid_state_obj.load_t, 'p', load_id, timestamp),
-                                  self._get_timeseries_value(grid_state_obj.load_t, 'q', load_id, timestamp),
-                                  self._get_timeseries_value(grid_state_obj.load_t, 'status', load_id, timestamp)))
+                            """, (grid_sim_id, timestamp_str, row.get('load'), row.get('load_name'), row.get('bus'),
+                                  self._get_timeseries_value(grid_state_obj.load_t, 'p', row.get('load'), timestamp),
+                                  self._get_timeseries_value(grid_state_obj.load_t, 'q', row.get('load'), timestamp),
+                                  self._get_timeseries_value(grid_state_obj.load_t, 'status', row.get('load'), timestamp)))
             
             # Store line time-series data
             if hasattr(grid_state_obj, 'line_t') and grid_state_obj.line_t:
@@ -840,15 +827,15 @@ class WECGridDB:
                     timestamp_str = timestamp.isoformat()
                     
                     if hasattr(grid_state_obj, 'line') and not grid_state_obj.line.empty:
-                        for line_id, row in grid_state_obj.line.iterrows():
+                        for idx, row in grid_state_obj.line.iterrows():
                             cursor.execute(f"""
                                 INSERT OR REPLACE INTO {table_prefix}line_results 
                                 (grid_sim_id, timestamp, line, line_name, ibus, jbus, line_pct, status)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (grid_sim_id, timestamp_str, line_id, row.get('line_name'), row.get('ibus'),
+                            """, (grid_sim_id, timestamp_str, row.get('line'), row.get('line_name'), row.get('ibus'),
                                   row.get('jbus'),
-                                  self._get_timeseries_value(grid_state_obj.line_t, 'line_pct', line_id, timestamp),
-                                  self._get_timeseries_value(grid_state_obj.line_t, 'status', line_id, timestamp)))
+                                  self._get_timeseries_value(grid_state_obj.line_t, 'line_pct', row.get('line'), timestamp),
+                                  self._get_timeseries_value(grid_state_obj.line_t, 'status', row.get('line'), timestamp)))
                                   
     def _store_wec_farm_data(self, grid_sim_id: int):
         """Store WEC farm data if available in the engine.
@@ -889,9 +876,32 @@ class WECGridDB:
         try:
             if parameter in timeseries_dict:
                 df = timeseries_dict[parameter]
-                if component_id in df.columns and timestamp in df.index:
-                    return df.loc[timestamp, component_id]
-        except (KeyError, AttributeError):
+                
+                # GridState stores time-series with component names as columns, not IDs
+                # Try both component_id directly and component name patterns
+                possible_columns = [
+                    component_id,  # Try direct ID first (fallback case)
+                    str(component_id),  # String version of ID
+                    f"Bus_{component_id}",  # Bus name pattern
+                    f"Gen_{component_id}",  # Generator name pattern  
+                    f"Line_{component_id}",  # Line name pattern
+                    f"Load_{component_id}"  # Load name pattern
+                ]
+                
+                for col in possible_columns:
+                    if col in df.columns and timestamp in df.index:
+                        value = df.loc[timestamp, col]
+                        # Debug: Print if value is None/NaN for slack bus
+                        # if component_id == 1 and parameter in ['p', 'q', 'v_mag', 'angle_deg'] and (pd.isna(value) or value is None):
+                        #     print(f"DEBUG: Slack bus {component_id} {parameter} = {value} (column: {col})")
+                        #     print(f"Available columns: {list(df.columns)}")
+                        #     print(f"Available timestamps: {list(df.index)}")
+                        return value
+                        
+        except (KeyError, AttributeError) as e:
+            # Debug: Print error for slack bus
+            if component_id == 1:
+                print(f"DEBUG: Error getting slack bus {component_id} {parameter}: {e}")
             pass
         return None
             
@@ -926,7 +936,7 @@ class WECGridDB:
                         (grid_sim_id, timestamp, bus, bus_name, type, p, q, v_mag, angle_deg, vbase)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (grid_sim_id, timestamp, bus_id, row.get('bus_name'), row.get('type'),
-                          row.get('p'), row.get('q'), row.get('v_mag'), row.get('angle_deg'), row.get('Vbase')))
+                          row.get('p'), row.get('q'), row.get('v_mag'), row.get('angle_deg'), row.get('vbase')))
             
             # Store generator results
             if not grid_state.gen.empty:
@@ -1012,6 +1022,243 @@ class WECGridDB:
             FROM wec_simulations 
             ORDER BY created_at DESC
         """, return_type="df")
+    
+    def pull_sim(self, grid_sim_id: int, software: str = None):
+        """Pull simulation data from database and reconstruct GridState object.
+        
+        Retrieves all time-series data for a specific simulation and recreates
+        the GridState object with both snapshot data and time-series history.
+        
+        Args:
+            grid_sim_id (int): Grid simulation ID to retrieve.
+            software (str, optional): Software backend to pull data for ("psse" or "pypsa").
+                If None, automatically detects which software was used based on 
+                grid_simulations table flags.
+                
+        Returns:
+            GridState: Reconstructed GridState object with time-series data.
+            
+        Raises:
+            ValueError: If grid_sim_id not found or software not available for this simulation.
+            
+        Example:
+            >>> # Pull PSS®E simulation data
+            >>> grid_state = engine.database.pull_sim(grid_sim_id=123, software="psse")
+            >>> print(f"Buses: {len(grid_state.bus)}")
+            >>> print(f"Time series data: {list(grid_state.bus_t.keys())}")
+            
+            >>> # Auto-detect software and pull data
+            >>> grid_state = engine.database.pull_sim(grid_sim_id=123)
+        """
+        # Import here to avoid circular import
+        from ..modelers.power_system.base import GridState, AttrDict
+        # Get simulation metadata
+        sim_info = self.query(
+            "SELECT * FROM grid_simulations WHERE grid_sim_id = ?",
+            params=(grid_sim_id,), return_type="df"
+        )
+        
+        if sim_info.empty:
+            raise ValueError(f"Simulation with ID {grid_sim_id} not found in database")
+        
+        sim_row = sim_info.iloc[0]
+        
+        # Auto-detect software if not specified
+        if software is None:
+            if sim_row['psse']:
+                software = 'psse'
+            elif sim_row['pypsa']:
+                software = 'pypsa'
+            else:
+                raise ValueError(f"No software backend data found for simulation {grid_sim_id}")
+        
+        # Validate software choice
+        if software not in ['psse', 'pypsa']:
+            raise ValueError(f"Invalid software: '{software}'. Must be 'psse' or 'pypsa'.")
+            
+        if software == 'psse' and not sim_row['psse']:
+            raise ValueError(f"PSS®E data not available for simulation {grid_sim_id}")
+        if software == 'pypsa' and not sim_row['pypsa']:
+            raise ValueError(f"PyPSA data not available for simulation {grid_sim_id}")
+        
+        print(f"Pulling {software.upper()} simulation data for ID {grid_sim_id}...")
+        print(f"  Case: {sim_row['case_name']}")
+        print(f"  Software flags: PSS®E={sim_row['psse']}, PyPSA={sim_row['pypsa']}")
+        
+        # Create GridState object
+        grid_state = GridState(software=software)
+        
+        # Set case name from database metadata
+        grid_state.case = sim_row['case_name']
+        
+        # Table prefix for this software
+        table_prefix = f"{software}_"
+        table_prefix = f"{software}_"
+        
+        # Pull bus data
+        bus_data = self.query(f"""
+            SELECT * FROM {table_prefix}bus_results 
+            WHERE grid_sim_id = ? 
+            ORDER BY timestamp, bus
+        """, params=(grid_sim_id,), return_type="df")
+        print(f"  Retrieved {len(bus_data)} bus data rows")
+        
+        # Pull generator data
+        gen_data = self.query(f"""
+            SELECT * FROM {table_prefix}generator_results 
+            WHERE grid_sim_id = ? 
+            ORDER BY timestamp, gen
+        """, params=(grid_sim_id,), return_type="df")
+        print(f"  Retrieved {len(gen_data)} generator data rows")
+        
+        # Pull load data
+        load_data = self.query(f"""
+            SELECT * FROM {table_prefix}load_results 
+            WHERE grid_sim_id = ? 
+            ORDER BY timestamp, load
+        """, params=(grid_sim_id,), return_type="df")
+        print(f"  Retrieved {len(load_data)} load data rows")
+        
+        # Pull line data
+        line_data = self.query(f"""
+            SELECT * FROM {table_prefix}line_results 
+            WHERE grid_sim_id = ? 
+            ORDER BY timestamp, line
+        """, params=(grid_sim_id,), return_type="df")
+        print(f"  Retrieved {len(line_data)} line data rows")
+        
+        # Convert timestamp strings to pandas timestamps
+        if not bus_data.empty:
+            bus_data['timestamp'] = pd.to_datetime(bus_data['timestamp'])
+        if not gen_data.empty:
+            gen_data['timestamp'] = pd.to_datetime(gen_data['timestamp'])
+        if not load_data.empty:
+            load_data['timestamp'] = pd.to_datetime(load_data['timestamp'])
+        if not line_data.empty:
+            line_data['timestamp'] = pd.to_datetime(line_data['timestamp'])
+        
+        # Reconstruct current snapshot data (use latest timestamp)
+        print("Reconstructing snapshot data...")
+        if not bus_data.empty:
+            latest_time = bus_data['timestamp'].max()
+            latest_bus = bus_data[bus_data['timestamp'] == latest_time].copy()
+            latest_bus.drop(columns=['grid_sim_id', 'timestamp'], inplace=True)
+            latest_bus.reset_index(drop=True, inplace=True)
+            # Ensure clean column headers
+            latest_bus.columns.name = None
+            latest_bus.index.name = None
+            latest_bus.attrs['df_type'] = 'BUS'
+            grid_state.bus = latest_bus
+            print(f"  Bus snapshot: {len(latest_bus)} buses at {latest_time}")
+            
+        if not gen_data.empty:
+            latest_time = gen_data['timestamp'].max()
+            latest_gen = gen_data[gen_data['timestamp'] == latest_time].copy()
+            latest_gen.drop(columns=['grid_sim_id', 'timestamp'], inplace=True)
+            latest_gen.reset_index(drop=True, inplace=True)
+            # Ensure clean column headers
+            latest_gen.columns.name = None
+            latest_gen.index.name = None
+            latest_gen.attrs['df_type'] = 'GEN'
+            grid_state.gen = latest_gen
+            print(f"  Generator snapshot: {len(latest_gen)} generators at {latest_time}")
+            
+        if not load_data.empty:
+            latest_time = load_data['timestamp'].max()
+            latest_load = load_data[load_data['timestamp'] == latest_time].copy()
+            latest_load.drop(columns=['grid_sim_id', 'timestamp'], inplace=True)
+            latest_load.reset_index(drop=True, inplace=True)
+            # Ensure clean column headers
+            latest_load.columns.name = None
+            latest_load.index.name = None
+            latest_load.attrs['df_type'] = 'LOAD'
+            grid_state.load = latest_load
+            print(f"  Load snapshot: {len(latest_load)} loads at {latest_time}")
+            
+        if not line_data.empty:
+            latest_time = line_data['timestamp'].max()
+            latest_line = line_data[line_data['timestamp'] == latest_time].copy()
+            latest_line.drop(columns=['grid_sim_id', 'timestamp'], inplace=True)
+            latest_line.reset_index(drop=True, inplace=True)
+            # Ensure clean column headers
+            latest_line.columns.name = None
+            latest_line.index.name = None
+            latest_line.attrs['df_type'] = 'LINE'
+            grid_state.line = latest_line
+            print(f"  Line snapshot: {len(latest_line)} lines at {latest_time}")
+        
+        # Reconstruct time-series data
+        def _reconstruct_timeseries(data_df, id_col, component_type):
+            """Helper function to reconstruct time-series data for a component type."""
+            if data_df.empty:
+                print(f"  No {component_type} time-series data found")
+                return AttrDict()
+                
+            print(f"  Reconstructing {component_type} time-series from {len(data_df)} rows...")
+            ts_data = AttrDict()
+            
+            # Get all variable columns (exclude metadata columns)
+            exclude_cols = {'grid_sim_id', 'timestamp', id_col, f'{component_type}_name'}
+            if component_type == 'bus':
+                exclude_cols.update({'bus_name', 'vbase'})  # Updated to include bus_name
+            elif component_type == 'gen':
+                exclude_cols.update({'gen_name', 'mbase'})  # Updated to include gen_name
+            elif component_type == 'line':
+                exclude_cols.update({'line_name', 'ibus', 'jbus'})  # Updated to include line_name
+            elif component_type == 'load':
+                exclude_cols.add('load_name')  # Added load_name
+            
+            var_cols = [col for col in data_df.columns if col not in exclude_cols]
+            print(f"    Variables: {var_cols}")
+            
+            # For each variable, create a time-series DataFrame
+            for var in var_cols:
+                if f'{component_type}_name' not in data_df.columns:
+                    print(f"    Warning: {component_type}_name column not found, using IDs")
+                    # Fallback: use component IDs as column names
+                    pivot_data = data_df.pivot(
+                        index='timestamp', 
+                        columns=id_col, 
+                        values=var
+                    )
+                else:
+                    # Pivot data to have timestamps as rows and component names as columns
+                    pivot_data = data_df.pivot(
+                        index='timestamp', 
+                        columns=f'{component_type}_name', 
+                        values=var
+                    )
+                
+                # Clean up column headers
+                pivot_data.columns.name = None
+                pivot_data.index.name = None
+                ts_data[var] = pivot_data
+                print(f"    {var}: {pivot_data.shape} ({len(pivot_data.columns)} components)")
+                
+            return ts_data
+        
+        # Reconstruct time-series for each component type
+        print("Reconstructing time-series data...")
+        grid_state.bus_t = _reconstruct_timeseries(bus_data, 'bus', 'bus')
+        grid_state.gen_t = _reconstruct_timeseries(gen_data, 'gen', 'gen')
+        grid_state.load_t = _reconstruct_timeseries(load_data, 'load', 'load')
+        grid_state.line_t = _reconstruct_timeseries(line_data, 'line', 'line')
+        
+        # Print summary
+        total_snapshots = 0
+        if not bus_data.empty:
+            total_snapshots = len(bus_data['timestamp'].unique())
+        
+        print(f"GridState reconstructed successfully:")
+        print(f"  Software: {software.upper()}")
+        print(f"  Case: {sim_row['case_name']}")
+        print(f"  Components: {len(grid_state.bus)} buses, {len(grid_state.gen)} generators, "
+              f"{len(grid_state.load)} loads, {len(grid_state.line)} lines")
+        print(f"  Time snapshots: {total_snapshots}")
+        print(f"  Time-series variables: bus({len(grid_state.bus_t)}), gen({len(grid_state.gen_t)}), "
+              f"load({len(grid_state.load_t)}), line({len(grid_state.line_t)})")
+        
+        return grid_state
     
     def set_database_path(self, db_path):
         """Set database path and reinitialize connection.
