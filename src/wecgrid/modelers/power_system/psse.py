@@ -80,31 +80,31 @@ class PSSEModeler(PowerSystemModeler):
         super().__init__(engine)
         self.grid.software = "psse"
 
-    def __repr__(self) -> str:
-        """String representation of PSS®E model with grid summary.
+    # def __repr__(self) -> str:
+    #     """String representation of PSS®E model with grid summary.
         
-        Returns:
-            str: Tree-style summary with case name, component counts, and system base [MVA].
+    #     Returns:
+    #         str: Tree-style summary with case name, component counts, and system base [MVA].
                 
-        Example:
-            >>> print(modeler)
-            psse:
-            ├─ case: IEEE_14_bus.sav
-            ├─ buses: 14
-            ├─ generators: 5
-            └─ lines: 20
-            Sbase: 100.0 MVA
-        """
-        return (
-            f"psse:\n"
-            f"├─ case: {self.engine.case_name}\n"
-            f"├─ buses: {len(self.grid.bus)}\n"
-            f"├─ generators: {len(self.grid.gen)}\n"
-            f"├─ loads: {len(self.grid.load)}\n"
-            f"└─ lines: {len(self.grid.line)}"
-            f"\n"
-            f"Sbase: {self.sbase} MVA"
-        )
+    #     Example:
+    #         >>> print(modeler)
+    #         psse:
+    #         ├─ case: IEEE_14_bus.sav
+    #         ├─ buses: 14
+    #         ├─ generators: 5
+    #         └─ lines: 20
+    #         Sbase: 100.0 MVA
+    #     """
+    #     return (
+    #         f"psse:\n"
+    #         f"├─ case: {self.engine.case_name}\n"
+    #         f"├─ buses: {len(self.grid.bus)}\n"
+    #         f"├─ generators: {len(self.grid.gen)}\n"
+    #         f"├─ loads: {len(self.grid.load)}\n"
+    #         f"└─ lines: {len(self.grid.line)}"
+    #         f"\n"
+    #         f"Sbase: {self.sbase} MVA"
+    #     )
         
     def init_api(self) -> bool:
         """Initialize the PSS®E environment and load the case.
@@ -536,7 +536,7 @@ class PSSEModeler(PowerSystemModeler):
                 "q":         q_pu,
                 "v_mag":     v_mag[i],          # already pu
                 "angle_deg": angle_deg[i],      # PSSE returns degrees
-                "Vbase":      base_kv[i], 
+                "vbase":      base_kv[i], 
             })
 
         df = pd.DataFrame(rows)

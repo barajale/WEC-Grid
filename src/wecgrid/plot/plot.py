@@ -24,17 +24,86 @@ class WECGridPlot:
 
     This class provides methods to plot time-series data for various grid
     components, create single-line diagrams, and compare results from different
-    modeling backends (PSS®E and PyPSA).
+    modeling backends (PSS®E and PyPSA). Can work with live engine data or
+    standalone GridState objects from database pulls.
     """
 
-    def __init__(self, engine: Any):
+    def __init__(self, engine: Any = None):
         """
-        Initialize the plotter with a WEC-GRID Engine instance.
+        Initialize the plotter with a WEC-GRID Engine instance or for standalone use.
 
         Args:
-            engine: The WEC-GRID Engine containing simulation data.
+            engine: The WEC-GRID Engine containing simulation data. Can be None for
+                   standalone usage with GridState objects.
         """
         self.engine = engine
+        self._standalone_grids = {}  # Store GridState objects for standalone usage
+
+    def add_grid(self, software: str, grid_state):
+        """Add a GridState object for standalone plotting.
+        
+        Allows plotting of simulation data without requiring the original modeling
+        software to be installed. Useful for analyzing database-pulled simulations.
+        
+        Args:
+            software (str): Software identifier ("psse", "pypsa", etc.)
+            grid_state: GridState object containing simulation data
+            
+        Example:
+            >>> plotter = WECGridPlot()
+            >>> psse_grid = engine.database.pull_sim(grid_sim_id=1, software='psse')
+            >>> plotter.add_grid('psse', psse_grid)
+            >>> plotter.gen(software='psse', parameter='p')
+        """
+        self._standalone_grids[software] = grid_state
+    
+    @classmethod
+    def from_database(cls, database, grid_sim_id: int, software: str = None):
+        """Create a standalone plotter from database simulation data.
+        
+        Convenience method to create a plotter with GridState data pulled from
+        the database, without requiring the original modeling software.
+        
+        Args:
+            database: WECGridDB instance
+            grid_sim_id (int): Grid simulation ID to retrieve
+            software (str, optional): Software backend ("psse" or "pypsa").
+                If None, auto-detects from database.
+                
+        Returns:
+            WECGridPlot: Plotter instance with GridState data loaded
+            
+        Example:
+            >>> plotter = WECGridPlot.from_database(
+            ...     engine.database, grid_sim_id=1, software='psse'
+            ... )
+            >>> plotter.gen(software='psse', parameter='p')
+        """
+        plotter = cls(engine=None)
+        grid_state = database.pull_sim(grid_sim_id, software)
+        plotter.add_grid(grid_state.software, grid_state)
+        return plotter
+        
+    def _get_grid_obj(self, software: str):
+        """Get GridState object from engine or standalone storage.
+        
+        Args:
+            software (str): Software identifier ("psse", "pypsa", etc.)
+            
+        Returns:
+            GridState object or None if not found
+        """
+        # First try standalone grids
+        if software in self._standalone_grids:
+            return self._standalone_grids[software]
+            
+        # Then try engine
+        if self.engine and hasattr(self.engine, software):
+            modeler = getattr(self.engine, software)
+            if modeler and hasattr(modeler, 'grid'):
+                return modeler.grid
+                
+        return None
 
     def _plot_time_series(self, software: str, component_type: str, parameter: str,
                           components: Optional[List[str]] = None,
@@ -44,8 +113,8 @@ class WECGridPlot:
 
         Args:
             software (str):
-                Modeling backend available on the engine (e.g., ``"psse"`` or
-                ``"pypsa"``).
+                Modeling backend identifier (e.g., ``"psse"`` or ``"pypsa"``).
+                Can reference engine modelers or standalone GridState objects.
             component_type (str):
                 Grid component group to plot (``"gen"``, ``"bus"``,
                 ``"load"``, ``"line"``, etc.).
@@ -73,11 +142,13 @@ class WECGridPlot:
                 data are missing or none of the requested components are
                 available.
         """
-        if not hasattr(self.engine, software):
-            print(f"Error: Software '{software}' not found in engine.")
+        grid_obj = self._get_grid_obj(software)
+        
+        if grid_obj is None:
+            print(f"Error: No grid data found for software '{software}'. "
+                  f"Use add_grid() for standalone GridState objects or ensure "
+                  f"the engine has '{software}' loaded.")
             return None, None
-
-        grid_obj = getattr(self.engine, software).grid
         component_data_t = getattr(grid_obj, f"{component_type}_t", None)
 
         if component_data_t is None or parameter not in component_data_t:
@@ -261,11 +332,13 @@ class WECGridPlot:
             - Layout is algorithmic, not geographical
             - No shunt devices (not in GridState schema)
         """
-        try:
-            # Get the appropriate grid object
-            grid_obj = getattr(self.engine, software).grid
-        except AttributeError:
-            raise ValueError(f"Engine does not have {software} attribute or grid is not loaded")
+        # Get the appropriate grid object
+        grid_obj = self._get_grid_obj(software)
+        
+        if grid_obj is None:
+            raise ValueError(f"No grid data found for software '{software}'. "
+                           f"Use add_grid() for standalone GridState objects or ensure "
+                           f"the engine has '{software}' loaded.")
         
         # Extract data from GridState
         bus_df = grid_obj.bus.copy()
@@ -486,11 +559,18 @@ class WECGridPlot:
             farms (Optional[List[str]]): A list of farm names to analyze. If None, all farms are analyzed.
             software (str): The modeling software to use. Defaults to 'pypsa'.
         """
-        if not hasattr(self.engine, software) or not self.engine.wec_farms:
-            print(f"Error: Software '{software}' not found or no WEC farms are defined in the engine.")
+        grid_obj = self._get_grid_obj(software)
+        
+        if grid_obj is None:
+            print(f"Error: No grid data found for software '{software}'. "
+                  f"Use add_grid() for standalone GridState objects or ensure "
+                  f"the engine has '{software}' loaded.")
             return
-
-        grid_obj = getattr(self.engine, software).grid
+            
+        if not self.engine or not self.engine.wec_farms:
+            print(f"Error: No WEC farms are defined in the engine. WEC analysis requires "
+                  f"engine with WEC farm data.")
+            return
         
         target_farms = self.engine.wec_farms
         if farms:
@@ -534,20 +614,31 @@ class WECGridPlot:
     def compare_modelers(self, grid_component: str, name: List[str], parameter: str):
         """
         Compares a parameter for a specific component between PSS®E and PyPSA.
+        
+        Works with both live engine data and standalone GridState objects added
+        via add_grid().
 
         Args:
             grid_component (str): The type of component ('bus', 'gen', 'load', 'line').
             name (List[str]): The name(s) of the component(s) to compare.
             parameter (str): The parameter to compare.
         """
-        if not hasattr(self.engine, 'psse') or not hasattr(self.engine, 'pypsa'):
-            print("Error: Both 'psse' and 'pypsa' must be loaded in the engine for comparison.")
+        # Check for available software data
+        available_software = []
+        for software in ['psse', 'pypsa']:
+            if self._get_grid_obj(software) is not None:
+                available_software.append(software)
+        
+        if len(available_software) < 2:
+            print(f"Error: Need at least 2 software backends for comparison. "
+                  f"Available: {available_software}. Use add_grid() to add GridState objects "
+                  f"or ensure both 'psse' and 'pypsa' are loaded in the engine.")
             return
 
         fig, ax = plt.subplots(figsize=(12, 6))
 
-        for software in ['psse', 'pypsa']:
-            grid_obj = getattr(self.engine, software).grid
+        for software in available_software:
+            grid_obj = self._get_grid_obj(software)
             component_data_t = getattr(grid_obj, f"{grid_component}_t", None)
             
             if component_data_t is None or parameter not in component_data_t:
@@ -560,19 +651,74 @@ class WECGridPlot:
             if isinstance(name, str):
                 name = [name]
             
-            available_components = [c for c in name if c in data.columns]
+            # Try to find components by name first, then by ID
+            available_components = []
+            component_df = getattr(grid_obj, grid_component, None)
+            
+            for comp_name in name:
+                # First try direct column match (for live engine data)
+                if comp_name in data.columns:
+                    available_components.append(comp_name)
+                # Then try to find by name->ID mapping (for pulled GridState data)
+                elif component_df is not None:
+                    # Try to find the component ID by name
+                    name_col = f"{grid_component}_name"
+                    id_col = grid_component
+                    
+                    if name_col in component_df.columns and id_col in component_df.columns:
+                        # Find the ID for this name
+                        matching_rows = component_df[component_df[name_col] == comp_name]
+                        if not matching_rows.empty:
+                            comp_id = matching_rows.iloc[0][id_col]
+                            # Check if this ID exists as a column in the time series
+                            if comp_id in data.columns:
+                                available_components.append(comp_id)
+                            elif str(comp_id) in data.columns:
+                                available_components.append(str(comp_id))
+                    
+                    # Also try treating the name as an ID directly
+                    elif comp_name in data.columns:
+                        available_components.append(comp_name)
+                    elif str(comp_name) in data.columns:
+                        available_components.append(str(comp_name))
+            
             if not available_components:
                 print(f"Warning: Component(s) {name} not found in {software} data.")
+                print(f"  Available columns: {list(data.columns)[:10]}...")  # Show first 10 columns
                 continue
             
             df_to_plot = data[available_components]
             
+            # Create meaningful column names for the legend
+            renamed_cols = []
+            for col in df_to_plot.columns:
+                # Try to get the component name from the component DataFrame
+                if component_df is not None:
+                    name_col = f"{grid_component}_name"
+                    id_col = grid_component
+                    
+                    if name_col in component_df.columns and id_col in component_df.columns:
+                        # Find the name for this ID
+                        if id_col in component_df.columns:
+                            matching_rows = component_df[component_df[id_col] == col]
+                            if not matching_rows.empty and name_col in component_df.columns:
+                                comp_name = matching_rows.iloc[0][name_col]
+                                renamed_cols.append(f"{comp_name}_{software.upper()}")
+                            else:
+                                renamed_cols.append(f"{col}_{software.upper()}")
+                        else:
+                            renamed_cols.append(f"{col}_{software.upper()}")
+                    else:
+                        renamed_cols.append(f"{col}_{software.upper()}")
+                else:
+                    renamed_cols.append(f"{col}_{software.upper()}")
+            
             # Rename columns for legend
-            df_to_plot.columns = [f"{col}_{software.upper()}" for col in df_to_plot.columns]
+            df_to_plot.columns = renamed_cols
             
             df_to_plot.plot(ax=ax, linestyle='--' if software == 'psse' else '-')
 
-        ax.set_title(f"Comparison for {grid_component.capitalize()} '{name}': {parameter.capitalize()}")
+        ax.set_title(f"Comparison for {grid_component.capitalize()} {name}: {parameter.capitalize()}")
         ax.set_ylabel(parameter)
         ax.set_xlabel("Time")
         ax.grid(True)
