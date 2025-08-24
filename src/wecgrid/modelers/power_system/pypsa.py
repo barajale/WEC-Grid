@@ -369,7 +369,7 @@ class PyPSAModeler(PowerSystemModeler):
             # Tap ratio and angle shift
             tap_ratio = w1.windv
             phase_shift = w1.ang
-
+           # --- Add Two-Winding Transformers ---
             self.network.add("Transformer",
                 name        = name,
                 bus0        = bus0,
@@ -389,28 +389,53 @@ class PyPSAModeler(PowerSystemModeler):
                 #active      = True,
                 v_ang_min   = -180,
                 v_ang_max   = 180,
-            )
-           # --- Add Two-Winding Transformers ---     
+            )     
 
         # --- Add Shunt Impedances ---
         for idx, sh in enumerate(self.parser.switched_shunts):
-            if sh.status != 1:
+            if sh.stat != 1:
                 continue  # Skip out-of-service shunts
 
-            v_nom = self.network.buses.at[str(sh.i), "v_nom"]  # in kV
-            v_sq = v_nom ** 2
+            # For switched shunts, calculate total susceptance from initial + all blocks
+            # binit is in MVAr at 1.0 pu voltage on system base
+            total_susceptance_mvar = sh.binit
+            
+            # Add all switched shunt blocks that are available
+            blocks = [(sh.n1, sh.b1), (sh.n2, sh.b2), (sh.n3, sh.b3), (sh.n4, sh.b4),
+                     (sh.n5, sh.b5), (sh.n6, sh.b6), (sh.n7, sh.b7), (sh.n8, sh.b8)]
+            
+            # For initial power flow, only use binit (fixed part)
+            # Switchable blocks would be controlled during operation
+            for n_steps, b_increment in blocks:
+                if n_steps is not None and b_increment is not None and n_steps > 0:
+                    # Conservative: assume steps are off initially
+                    pass
+            
+            # Skip shunts with zero susceptance
+            if abs(total_susceptance_mvar) < 1e-6:
+                continue
 
-            g_siemens = sh.gl / v_sq  # MW / kV^2 → Siemens
-            b_siemens = sh.bl / v_sq  # MVAr / kV^2 → Siemens
-
+            # Convert MVAr to Siemens
+            # PSS®E shunt: binit is "MVAr per unit voltage" 
+            # This means: at 1.0 pu voltage (= V_base_kV), reactive power = binit MVAr
+            # Formula: B_siemens = Q_MVAr_at_rated_voltage / V_base_kV^2
+            v_base_kv = self.network.buses.at[str(sh.i), "v_nom"]
+            
+            # Convert: B = Q / V^2 (Siemens = MVAr / kV^2)
+            b_siemens = total_susceptance_mvar / (v_base_kv ** 2)
+            
+            # Additional check for reasonable values
+            if abs(b_siemens) > 1000:  # Very large susceptance values
+                print(f"[WARNING] Large shunt susceptance at bus {sh.i}: {b_siemens:.6f} S")
+                continue
+                
             shunt_name = f"Shunt_{idx}"
 
             self.network.add("ShuntImpedance",
                 name = shunt_name,
                 bus  = str(sh.i),
-                g    = g_siemens,
-                b    = b_siemens,
-                active = True,
+                g    = 0.0,  # Switched shunts typically don't have conductance
+                b    = b_siemens
             )
         return 1
 

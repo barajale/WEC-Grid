@@ -154,7 +154,6 @@ class WECGridDB:
             return False
             
         if not os.path.exists(self.db_path):
-            print(f"Database not found. Creating new database at {self.db_path}...")
             # Ensure directory exists
             os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
             self.initialize_database()
@@ -175,14 +174,12 @@ class WECGridDB:
             
             missing_tables = set(required_tables) - existing_tables
             if missing_tables:
-                print(f"Missing tables: {missing_tables}. Reinitializing database schema...")
                 self.initialize_database()
                 return False
                 
         # Check for missing columns in existing tables and migrate
         self._migrate_schema()
                 
-        #print("Database schema validated successfully.")
         return True
 
     def _migrate_schema(self):
@@ -197,18 +194,15 @@ class WECGridDB:
             migrations_applied = False
             
             if 'wave_spectrum' not in columns:
-                print("Adding wave_spectrum column to wec_simulations table...")
                 cursor.execute("ALTER TABLE wec_simulations ADD COLUMN wave_spectrum TEXT")
                 migrations_applied = True
                 
             if 'wave_class' not in columns:
-                print("Adding wave_class column to wec_simulations table...")
                 cursor.execute("ALTER TABLE wec_simulations ADD COLUMN wave_class TEXT")
                 migrations_applied = True
                 
             if migrations_applied:
                 conn.commit()
-                print("Database schema updated successfully.")
 
     @contextmanager
     def connection(self):
@@ -266,7 +260,6 @@ class WECGridDB:
             # Update the instance to use this new database path
             save_database_config(db_path)
             self.db_path = db_path
-            print(f"Creating new database at: {self.db_path}")
             
             # Create the database file if it doesn't exist
             if not os.path.exists(db_path):
@@ -521,8 +514,6 @@ class WECGridDB:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_wec_power_time ON wec_power_results(wec_sim_id, time_sec)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_wec_integration ON wec_integrations(grid_sim_id, wec_sim_id)")
             
-            print("Database schema initialized successfully.")
-            
     def clean_database(self):
         """Delete the current database and reinitialize with fresh schema.
         
@@ -552,7 +543,6 @@ class WECGridDB:
         if os.path.exists(self.db_path):
             try:
                 os.remove(self.db_path)
-                print(f"Deleted existing database: {self.db_path}")
             except OSError as e:
                 print(f"Error deleting database file: {e}")
                 return False
@@ -560,7 +550,6 @@ class WECGridDB:
         # Reinitialize with fresh schema
         try:
             self.initialize_database()
-            print("Database cleaned and reinitialized successfully.")
             return True
         except Exception as e:
             print(f"Error reinitializing database: {e}")
@@ -628,12 +617,10 @@ class WECGridDB:
         # Check for PSS®E
         if hasattr(self.engine, 'psse') and hasattr(self.engine.psse, 'grid'):
             softwares.append(self.engine.psse.grid)
-            print(f"Found PSS®E grid data")
         
         # Check for PyPSA  
         if hasattr(self.engine, 'pypsa') and hasattr(self.engine.pypsa, 'grid'):
             softwares.append(self.engine.pypsa.grid)
-            print(f"Found PyPSA grid data")
         
         if not softwares:
             raise ValueError("No software backends found in engine. Ensure PSS®E or PyPSA models are loaded.")
@@ -651,18 +638,8 @@ class WECGridDB:
         pypsa_used = False
         sbase_mva = None
         
-        print(f"Processing {len(softwares)} software objects...")
-        
         for i, software_obj in enumerate(softwares):
             software_name = getattr(software_obj, 'software', '')
-            print(f"  Software {i+1}: '{software_name}' (type: {type(software_obj)})")
-            
-            # Debug: Check if software attribute exists but is None or empty
-            if hasattr(software_obj, 'software'):
-                raw_software = software_obj.software
-                print(f"    Raw software attribute: {repr(raw_software)}")
-            else:
-                print(f"    No 'software' attribute found")
             
             software_name = software_name.lower() if software_name else ''
             
@@ -671,23 +648,19 @@ class WECGridDB:
             elif software_name == "pypsa":
                 pypsa_used = True
             else:
-                print(f"  Warning: Unknown or missing software '{software_name}' - skipping this object")
                 continue  # Skip this software object instead of processing it
             
             # Get sbase from the first software object
             if sbase_mva is None:
                 if hasattr(software_obj, 'sbase'):
                     sbase_mva = software_obj.sbase
-                    print(f"  Found sbase: {sbase_mva} MVA")
                 else:
                     # Try to get from parent object  
                     parent = getattr(software_obj, '_parent', None)
                     if parent and hasattr(parent, 'sbase'):
                         sbase_mva = parent.sbase
-                        print(f"  Found sbase from parent: {sbase_mva} MVA")
                     else:
                         sbase_mva = 100.0  # Default fallback
-                        print(f"  Using default sbase: {sbase_mva} MVA")
         
         # Get time information from simulation 
         sim_start_time = timeManager.start_time.isoformat()
@@ -710,7 +683,6 @@ class WECGridDB:
                   sim_end_time, delta_time, notes))
             
             grid_sim_id = cursor.lastrowid
-            print(f"Created new simulation with ID: {grid_sim_id}")
         
         # Store data for each valid software
         valid_softwares = []
@@ -720,18 +692,13 @@ class WECGridDB:
             # Only process valid software names
             if software_name in ['psse', 'pypsa']:
                 valid_softwares.append((software_obj, software_name))
-            else:
-                print(f"Skipping invalid software object: {software_name}")
         
         for software_obj, software_name in valid_softwares:
-            print(f"Storing time-series data for {software_name.upper()}...")
-            
             # Store all time-series data from GridState
             self._store_all_gridstate_timeseries(grid_sim_id, software_obj, software_name, timeManager)
         
         # Store WEC farm data if available
         if hasattr(self.engine, 'wec_farms') and self.engine.wec_farms:
-            print("Storing WEC farm data...")
             self._store_wec_farm_data(grid_sim_id)
         
         # Create summary of used software
@@ -741,10 +708,7 @@ class WECGridDB:
         if pypsa_used:
             used_software.append("PyPSA")
         
-        print(f"Simulation saved with ID: {grid_sim_id}")
-        print(f"Software backends: {', '.join(used_software)}")
-        print(f"Case: {case_name}")
-        print(f"Time series data stored for {len(softwares)} software(s)")
+        print(f"Simulation saved: ID {grid_sim_id} - {sim_name}")
         
         return grid_sim_id
         
@@ -763,8 +727,6 @@ class WECGridDB:
             
         table_prefix = f"{software}_"
         snapshots = timeManager.snapshots
-        
-        print(f"  Storing data to {table_prefix}* tables...")
         
         with self.connection() as conn:
             cursor = conn.cursor()
@@ -847,19 +809,12 @@ class WECGridDB:
             cursor = conn.cursor()
             
             for farm in self.engine.wec_farms:
-                print(f"  Storing WEC farm: {farm.farm_name}")
-                
                 # Store wec_integrations record linking farm to grid simulation
                 cursor.execute("""
                     INSERT OR REPLACE INTO wec_integrations 
                     (grid_sim_id, wec_sim_id, farm_name, bus_location, num_devices)
                     VALUES (?, ?, ?, ?, ?)
                 """, (grid_sim_id, farm.wec_sim_id, farm.farm_name, farm.bus_location, farm.size))
-                
-                print(f"    - Farm '{farm.farm_name}' at bus {farm.bus_location}")
-                print(f"    - WEC sim ID: {farm.wec_sim_id}, devices: {farm.size}")
-        
-        print(f"  Stored {len(self.engine.wec_farms)} WEC farm integration(s)")
                                   
     def _get_timeseries_value(self, timeseries_dict, parameter: str, component_id: int, timestamp):
         """Extract time-series value for specific component and timestamp.
@@ -1081,10 +1036,6 @@ class WECGridDB:
         if software == 'pypsa' and not sim_row['pypsa']:
             raise ValueError(f"PyPSA data not available for simulation {grid_sim_id}")
         
-        print(f"Pulling {software.upper()} simulation data for ID {grid_sim_id}...")
-        print(f"  Case: {sim_row['case_name']}")
-        print(f"  Software flags: PSS®E={sim_row['psse']}, PyPSA={sim_row['pypsa']}")
-        
         # Create GridState object
         grid_state = GridState(software=software)
         
@@ -1101,7 +1052,6 @@ class WECGridDB:
             WHERE grid_sim_id = ? 
             ORDER BY timestamp, bus
         """, params=(grid_sim_id,), return_type="df")
-        print(f"  Retrieved {len(bus_data)} bus data rows")
         
         # Pull generator data
         gen_data = self.query(f"""
@@ -1109,7 +1059,6 @@ class WECGridDB:
             WHERE grid_sim_id = ? 
             ORDER BY timestamp, gen
         """, params=(grid_sim_id,), return_type="df")
-        print(f"  Retrieved {len(gen_data)} generator data rows")
         
         # Pull load data
         load_data = self.query(f"""
@@ -1117,7 +1066,6 @@ class WECGridDB:
             WHERE grid_sim_id = ? 
             ORDER BY timestamp, load
         """, params=(grid_sim_id,), return_type="df")
-        print(f"  Retrieved {len(load_data)} load data rows")
         
         # Pull line data
         line_data = self.query(f"""
@@ -1125,7 +1073,6 @@ class WECGridDB:
             WHERE grid_sim_id = ? 
             ORDER BY timestamp, line
         """, params=(grid_sim_id,), return_type="df")
-        print(f"  Retrieved {len(line_data)} line data rows")
         
         # Convert timestamp strings to pandas timestamps
         if not bus_data.empty:
@@ -1138,7 +1085,6 @@ class WECGridDB:
             line_data['timestamp'] = pd.to_datetime(line_data['timestamp'])
         
         # Reconstruct current snapshot data (use latest timestamp)
-        print("Reconstructing snapshot data...")
         if not bus_data.empty:
             latest_time = bus_data['timestamp'].max()
             latest_bus = bus_data[bus_data['timestamp'] == latest_time].copy()
@@ -1149,7 +1095,6 @@ class WECGridDB:
             latest_bus.index.name = None
             latest_bus.attrs['df_type'] = 'BUS'
             grid_state.bus = latest_bus
-            print(f"  Bus snapshot: {len(latest_bus)} buses at {latest_time}")
             
         if not gen_data.empty:
             latest_time = gen_data['timestamp'].max()
@@ -1161,7 +1106,6 @@ class WECGridDB:
             latest_gen.index.name = None
             latest_gen.attrs['df_type'] = 'GEN'
             grid_state.gen = latest_gen
-            print(f"  Generator snapshot: {len(latest_gen)} generators at {latest_time}")
             
         if not load_data.empty:
             latest_time = load_data['timestamp'].max()
@@ -1173,7 +1117,6 @@ class WECGridDB:
             latest_load.index.name = None
             latest_load.attrs['df_type'] = 'LOAD'
             grid_state.load = latest_load
-            print(f"  Load snapshot: {len(latest_load)} loads at {latest_time}")
             
         if not line_data.empty:
             latest_time = line_data['timestamp'].max()
@@ -1185,16 +1128,13 @@ class WECGridDB:
             latest_line.index.name = None
             latest_line.attrs['df_type'] = 'LINE'
             grid_state.line = latest_line
-            print(f"  Line snapshot: {len(latest_line)} lines at {latest_time}")
         
         # Reconstruct time-series data
         def _reconstruct_timeseries(data_df, id_col, component_type):
             """Helper function to reconstruct time-series data for a component type."""
             if data_df.empty:
-                print(f"  No {component_type} time-series data found")
                 return AttrDict()
                 
-            print(f"  Reconstructing {component_type} time-series from {len(data_df)} rows...")
             ts_data = AttrDict()
             
             # Get all variable columns (exclude metadata columns)
@@ -1209,12 +1149,10 @@ class WECGridDB:
                 exclude_cols.add('load_name')  # Added load_name
             
             var_cols = [col for col in data_df.columns if col not in exclude_cols]
-            print(f"    Variables: {var_cols}")
             
             # For each variable, create a time-series DataFrame
             for var in var_cols:
                 if f'{component_type}_name' not in data_df.columns:
-                    print(f"    Warning: {component_type}_name column not found, using IDs")
                     # Fallback: use component IDs as column names
                     pivot_data = data_df.pivot(
                         index='timestamp', 
@@ -1233,30 +1171,17 @@ class WECGridDB:
                 pivot_data.columns.name = None
                 pivot_data.index.name = None
                 ts_data[var] = pivot_data
-                print(f"    {var}: {pivot_data.shape} ({len(pivot_data.columns)} components)")
                 
             return ts_data
         
         # Reconstruct time-series for each component type
-        print("Reconstructing time-series data...")
         grid_state.bus_t = _reconstruct_timeseries(bus_data, 'bus', 'bus')
         grid_state.gen_t = _reconstruct_timeseries(gen_data, 'gen', 'gen')
         grid_state.load_t = _reconstruct_timeseries(load_data, 'load', 'load')
         grid_state.line_t = _reconstruct_timeseries(line_data, 'line', 'line')
         
-        # Print summary
-        total_snapshots = 0
-        if not bus_data.empty:
-            total_snapshots = len(bus_data['timestamp'].unique())
-        
-        print(f"GridState reconstructed successfully:")
-        print(f"  Software: {software.upper()}")
-        print(f"  Case: {sim_row['case_name']}")
-        print(f"  Components: {len(grid_state.bus)} buses, {len(grid_state.gen)} generators, "
-              f"{len(grid_state.load)} loads, {len(grid_state.line)} lines")
-        print(f"  Time snapshots: {total_snapshots}")
-        print(f"  Time-series variables: bus({len(grid_state.bus_t)}), gen({len(grid_state.gen_t)}), "
-              f"load({len(grid_state.load_t)}), line({len(grid_state.line_t)})")
+        print(f"GridState reconstructed: {sim_row['case_name']} ({software.upper()}) - "
+              f"{len(grid_state.bus)} buses, {len(grid_state.gen)} generators")
         
         return grid_state
     
@@ -1277,7 +1202,6 @@ class WECGridDB:
         
         # Update current instance
         self.db_path = str(Path(db_path).absolute())
-        print(f"Database path updated: {self.db_path}")
         
         # Reinitialize
         self.check_and_initialize()
