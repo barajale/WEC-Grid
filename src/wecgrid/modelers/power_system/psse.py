@@ -140,7 +140,7 @@ class PSSEModeler(PowerSystemModeler):
                 import redirect
                 redirect.psse2py() 
                 psse35.set_minor(3)
-                psspy.psseinit(50)
+                psspy.psseinit(2000) # need to update based on grid size
 
             if not Debug:
                 psspy.prompt_output(6, "", [])
@@ -196,8 +196,39 @@ class PSSEModeler(PowerSystemModeler):
         """
         ierr = self.psspy.fnsl()
         ival = self.psspy.solved()
+        
         if ierr != 0 or ival != 0:
-            print(f"[ERROR] Powerflow not solved. PSS®E error code: {ierr}, Solved Status: {ival}")
+            # Define error code descriptions
+            ierr_descriptions = {
+                0: "No error occurred",
+                1: "Invalid OPTIONS value",
+                2: "Generators are converted",
+                3: "Buses in island(s) without a swing bus; use activity TREE",
+                4: "Bus type code and series element status inconsistencies",
+                5: "Prerequisite requirements for API are not met"
+            }
+            
+            ival_descriptions = {
+                0: "Met convergence tolerance",
+                1: "Iteration limit exceeded",
+                2: "Blown up (only when non-divergent option disabled)",
+                3: "Terminated by non-divergent option",
+                4: "Terminated by console interrupt",
+                5: "Singular Jacobian matrix or voltage of 0.0 detected",
+                6: "Inertial power flow dispatch error (INLF)",
+                7: "OPF solution met convergence tolerance (NOPF)",
+                9: "Solution not attempted",
+                10: "RSOL converged with Phase shift locked",
+                11: "RSOL converged with TOLN increased",
+                12: "RSOL converged with Y load conversion due to low voltage"
+            }
+            
+            ierr_desc = ierr_descriptions.get(ierr, f"Unknown error code: {ierr}")
+            ival_desc = ival_descriptions.get(ival, f"Unknown convergence status: {ival}")
+            
+            print(f"[ERROR] Powerflow not solved.")
+            print(f"  PSS®E Error Code {ierr}: {ierr_desc}")
+            print(f"  Convergence Status {ival}: {ival_desc}")
             #TODO error handling here 
             return False
         return True
