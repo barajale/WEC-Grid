@@ -12,6 +12,7 @@ Classes:
 import contextlib
 import io
 import logging
+import time
 from collections import defaultdict
 from datetime import datetime
 from math import inf
@@ -171,8 +172,6 @@ class PyPSAModeler(PowerSystemModeler):
         else:
             return True
         
-        
-     
     def import_raw_to_pypsa(self) -> bool:
         """Import PSS®E case file and build PyPSA Network.
         
@@ -439,7 +438,6 @@ class PyPSAModeler(PowerSystemModeler):
             )
         return 1
 
-
     def add_wec_farm(self, farm) -> bool:
         """Add a WEC farm to the PyPSA model.
 
@@ -511,8 +509,7 @@ class PyPSAModeler(PowerSystemModeler):
             print(f"[PyPSA ERROR]: Failed to add WEC Components: {e}")
             return False  
     
-    
-    
+
     def simulate(self, load_curve=None) -> bool:
         """Simulate the PyPSA grid over time with WEC farm updates.
         
@@ -556,8 +553,21 @@ class PyPSAModeler(PowerSystemModeler):
         # (if you prefer your original naming)
         bus_to_load = {str(bus): name for name, bus in self.network.loads['bus'].items()}
 
-        #for snapshot in tqdm(self.engine.time.snapshots, desc="PyPSA Simulating", unit="step"):
+        # Initialize timing storage
+        if not hasattr(self, '_timing_data'):
+            self._timing_data = {
+                'simulation_total': 0.0,
+                'iteration_times': [],
+                'solve_powerflow_times': [],
+                'take_snapshot_times': []
+            }
+        
+        # log simulation start 
+        sim_start = time.time()
         for snapshot in self.engine.time.snapshots:
+            # log itr i start 
+            iter_start = time.time()
+            
             # WEC generators
             for farm in self.engine.wec_farms:
                 power = farm.power_at_snapshot(snapshot) * self.sbase  # pu -> MW 
@@ -572,12 +582,46 @@ class PyPSAModeler(PowerSystemModeler):
                         continue  # or raise if this should never happen
                     mw = float(load_curve.loc[snapshot, bus]) * self.sbase
                     self.network.loads.at[load_id, "p_set"] = mw
-
+            
+            # log solve pf time start
+            pf_start = time.time()
             if self.solve_powerflow():
+                # log solve pf time end
+                pf_end = time.time()
+                self._timing_data['solve_powerflow_times'].append(pf_end - pf_start)
+                
+                # log take snapshot time start
+                snap_start = time.time()
                 self.take_snapshot(timestamp=snapshot)
+                # log take snapshot time end
+                snap_end = time.time()
+                self._timing_data['take_snapshot_times'].append(snap_end - snap_start)
             else:
                 raise Exception(f"Powerflow failed at snapshot {snapshot}")
+            
+            # log itr i end
+            iter_end = time.time()
+            self._timing_data['iteration_times'].append(iter_end - iter_start)
+            
+        # log simulation end
+        sim_end = time.time()
+        self._timing_data['simulation_total'] = sim_end - sim_start
         return True
+    
+    
+    def get_timing_data(self) -> Dict[str, Any]:
+        """Get timing data collected during simulation.
+        
+        Returns:
+            Dict containing timing information:
+                - simulation_total: Total simulation time [seconds]
+                - iteration_times: List of iteration times [seconds]
+                - solve_powerflow_times: List of power flow solve times [seconds]
+                - take_snapshot_times: List of snapshot capture times [seconds]
+        """
+        if not hasattr(self, '_timing_data'):
+            return {}
+        return self._timing_data.copy()
     
     
     def take_snapshot(self, timestamp: datetime) -> None:
