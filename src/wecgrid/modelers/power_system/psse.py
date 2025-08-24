@@ -6,6 +6,7 @@ PSS®E Modeler
 import contextlib
 import os
 import sys
+import time
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -397,10 +398,23 @@ class PSSEModeler(PowerSystemModeler):
                 - Q: Reactive power load [MVAr]
             - ``fnsl()``: Solve power flow at each time step
         """
-        
+        # Initialize timing storage
+        if not hasattr(self, '_timing_data'):
+            self._timing_data = {
+                'simulation_total': 0.0,
+                'iteration_times': [],
+                'solve_powerflow_times': [],
+                'take_snapshot_times': []
+            }
 
+        # log simulation start 
+        sim_start = time.time()
+        
         #for snapshot in tqdm(self.engine.time.snapshots, desc="PSS®E Simulating", unit="step"):
         for snapshot in self.engine.time.snapshots:
+            # log itr i start 
+            iter_start = time.time()
+            
             for farm in self.engine.wec_farms:
                 power = farm.power_at_snapshot(snapshot) # pu sbase
                 ierr = self.psspy.machine_chng_4(
@@ -409,6 +423,7 @@ class PSSEModeler(PowerSystemModeler):
                         realar=[power * self.sbase] + [self._f]*16) > 0
                 if ierr > 0: 
                     raise Exception(f"Error setting generator power at snapshot {snapshot}")
+                    
             if load_curve is not None:
                 for bus in load_curve.columns:
                     pl = float(load_curve.loc[snapshot, bus])
@@ -417,11 +432,45 @@ class PSSEModeler(PowerSystemModeler):
                         realar=[pl * self.sbase] + [self._f]*7)
                 if ierr > 0:
                     raise Exception(f"Error setting load at bus {bus} on snapshot {snapshot}")
+            
+            # log solve pf time start
+            pf_start = time.time()
             if self.solve_powerflow():
+                # log solve pf time end
+                pf_end = time.time()
+                self._timing_data['solve_powerflow_times'].append(pf_end - pf_start)
+                
+                # log take snapshot time start
+                snap_start = time.time()
                 self.take_snapshot(timestamp=snapshot)
+                # log take snapshot time end
+                snap_end = time.time()
+                self._timing_data['take_snapshot_times'].append(snap_end - snap_start)
             else:
                 raise Exception(f"Powerflow failed at snapshot {snapshot}")
+            
+            # log itr i end
+            iter_end = time.time()
+            self._timing_data['iteration_times'].append(iter_end - iter_start)
+            
+        # log simulation end
+        sim_end = time.time()
+        self._timing_data['simulation_total'] = sim_end - sim_start
         return True
+
+    def get_timing_data(self) -> Dict[str, Any]:
+        """Get timing data collected during simulation.
+        
+        Returns:
+            Dict containing timing information:
+                - simulation_total: Total simulation time [seconds]
+                - iteration_times: List of iteration times [seconds]
+                - solve_powerflow_times: List of power flow solve times [seconds]
+                - take_snapshot_times: List of snapshot capture times [seconds]
+        """
+        if not hasattr(self, '_timing_data'):
+            return {}
+        return self._timing_data.copy()
 
     def take_snapshot(self, timestamp: datetime) -> None:
         """Take a snapshot of the current grid state.
