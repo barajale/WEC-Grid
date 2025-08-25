@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 # Third-party
 import pandas as pd
+from tqdm import tqdm
 
 # Local
 from .base import PowerSystemModeler, GridState
@@ -410,8 +411,8 @@ class PSSEModeler(PowerSystemModeler):
         # log simulation start 
         sim_start = time.time()
         
-        #for snapshot in tqdm(self.engine.time.snapshots, desc="PSS®E Simulating", unit="step"):
-        for snapshot in self.engine.time.snapshots:
+        for snapshot in tqdm(self.engine.time.snapshots, desc="PSS®E Simulating", unit="step"):
+        #for snapshot in self.engine.time.snapshots:
             # log itr i start 
             iter_start = time.time()
             

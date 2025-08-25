@@ -22,6 +22,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 import pypsa
+from tqdm import tqdm
 
 # External packages
 import grg_pssedata.io as grgio
@@ -508,105 +509,229 @@ class PyPSAModeler(PowerSystemModeler):
         except Exception as e:
             print(f"[PyPSA ERROR]: Failed to add WEC Components: {e}")
             return False  
-    
-
+        
     def simulate(self, load_curve=None) -> bool:
         """Simulate the PyPSA grid over time with WEC farm updates.
-        
-        Simulates the PyPSA grid over a series of time snapshots, updating WEC farm 
-        generator outputs and optionally bus loads at each time step. For each snapshot,
-        the method updates generator power outputs, applies load changes if provided,
-        solves the power flow, and captures the grid state.
-        
+
+        Simulates the PyPSA grid over a series of time snapshots, updating WEC farm
+        generator outputs and optionally bus loads at each time step. For each
+        snapshot, the method updates generator power outputs, applies load changes
+        if provided, solves the power flow, and captures the grid state.
+
         Args:
-            load_curve (Optional[pd.DataFrame]): DataFrame containing load values for 
-                each bus at each snapshot. Index should be snapshots, columns should 
-                be bus IDs. If None, loads remain constant.
+            load_curve (Optional[pd.DataFrame]): DataFrame containing load values for
+                each bus at each snapshot. Index should be snapshots (same dtype/order
+                as self.engine.time.snapshots), columns should be bus IDs. If None,
+                loads remain constant.
 
         Returns:
             bool: True if the simulation completes successfully.
-            
+
         Raises:
-            Exception: If there is an error setting generator power, setting load data, 
+            Exception: If there is an error setting generator power, setting load data,
                 or solving the power flow at any snapshot.
 
         Notes:
             The simulation process includes:
-            
+
             WEC Generator Updates:
             - Updates WEC generator power setpoints [MW]
-            - Converts from per-unit to MW using farm base power
+            - Converts from per-unit to MW using system base (self.sbase)
             - Uses farm power curve data for each time snapshot
-            
+
             Load Updates (if load_curve provided):
-            - Updates bus load values [MW] 
+            - Updates bus load values [MW]
             - Converts from per-unit to MW using system base
             - Maps bus numbers to PyPSA load component names
-            
+
             Power Flow Solution:
             - Solves power flow at each time step
             - Captures grid state snapshots for analysis
+            - Provides progress indication via tqdm
         """
-        # map: bus number (str) -> load name (index)
-        bus_to_load = self.network.loads['bus'].astype(str).to_dict()
-        inv_map = {v: k for k, v in bus_to_load.items()}  # bus->load
-        # (if you prefer your original naming)
-        bus_to_load = {str(bus): name for name, bus in self.network.loads['bus'].items()}
+        n = self.network
+        sbase = float(self.sbase)
 
-        # Initialize timing storage
-        if not hasattr(self, '_timing_data'):
+        # ---------- timing ----------
+        if not hasattr(self, "_timing_data"):
             self._timing_data = {
-                'simulation_total': 0.0,
-                'iteration_times': [],
-                'solve_powerflow_times': [],
-                'take_snapshot_times': []
+                "simulation_total": 0.0,
+                "iteration_times": [],
+                "solve_powerflow_times": [],
+                "take_snapshot_times": [],
             }
-        
-        # log simulation start 
-        sim_start = time.time()
-        for snapshot in self.engine.time.snapshots:
-            # log itr i start 
-            iter_start = time.time()
-            
-            # WEC generators
-            for farm in self.engine.wec_farms:
-                power = farm.power_at_snapshot(snapshot) * self.sbase  # pu -> MW 
-                # write to the DataFrame, not the Series view
-                self.network.generators.at[f"W{farm.farm_id}", "p_set"] = power
 
-            # Loads
-            if load_curve is not None:
-                for bus in load_curve.columns:
-                    load_id = bus_to_load.get(str(bus)) # PU 
-                    if load_id is None:
-                        continue  # or raise if this should never happen
-                    mw = float(load_curve.loc[snapshot, bus]) * self.sbase
-                    self.network.loads.at[load_id, "p_set"] = mw
-            
-            # log solve pf time start
-            pf_start = time.time()
-            if self.solve_powerflow():
-                # log solve pf time end
-                pf_end = time.time()
-                self._timing_data['solve_powerflow_times'].append(pf_end - pf_start)
-                
-                # log take snapshot time start
-                snap_start = time.time()
-                self.take_snapshot(timestamp=snapshot)
-                # log take snapshot time end
-                snap_end = time.time()
-                self._timing_data['take_snapshot_times'].append(snap_end - snap_start)
-            else:
+        # ---------- mappings (once) ----------
+        bus_to_load = {str(bus): name for name, bus in n.loads["bus"].items()}
+
+        mapped_cols = []
+        mapped_load_ids = []
+        load_row_pos = None
+        pset_col_pos = None
+        fast_row_lookup = False
+        load_curve_np = None
+
+        if load_curve is not None and not load_curve.empty:
+            for col in load_curve.columns:
+                lid = bus_to_load.get(str(col))
+                if lid is not None and lid in n.loads.index:
+                    mapped_cols.append(col)
+                    mapped_load_ids.append(lid)
+
+            if mapped_load_ids:
+                load_row_pos = n.loads.index.get_indexer(pd.Index(mapped_load_ids))
+                pset_col_pos = n.loads.columns.get_loc("p_set")
+
+                fast_row_lookup = load_curve.index.equals(self.engine.time.snapshots)
+                if fast_row_lookup:
+                    load_curve_np = load_curve[mapped_cols].to_numpy(dtype=float, copy=False)
+
+        # WEC farms → generator ids
+        farm_objs = list(self.engine.wec_farms)
+        farm_gen_ids = [f"W{farm.farm_id}" for farm in farm_objs]
+        missing = [gid for gid in farm_gen_ids if gid not in n.generators.index]
+        if missing:
+            raise ValueError(f"Missing WEC generators in network: {missing}")
+
+        # ---------- main loop ----------
+        t0 = time.perf_counter()
+        for t_idx, snapshot in enumerate(tqdm(self.engine.time.snapshots, desc="PyPSA Simulating", unit="step")):
+            step_start = time.perf_counter()
+
+            # --- WEC generator p_set (vector) ---
+            if farm_gen_ids:
+                p_mw = np.fromiter(
+                    (farm.power_at_snapshot(snapshot) * sbase for farm in farm_objs),
+                    dtype=float,
+                    count=len(farm_objs),
+                )
+                n.generators.loc[farm_gen_ids, "p_set"] = p_mw
+
+            # --- Loads p_set (vector) ---
+            if mapped_cols:
+                if fast_row_lookup:
+                    row = load_curve_np[t_idx] * sbase
+                else:
+                    row = load_curve.loc[snapshot, mapped_cols].to_numpy(dtype=float, copy=False) * sbase
+                n.loads.iloc[load_row_pos, pset_col_pos] = row
+
+            # --- solve PF + snapshot timing ---
+            pf_start = time.perf_counter()
+            ok = self.solve_powerflow()  # or n.pf(snapshot) if your wrapper expects a single step
+            pf_end = time.perf_counter()
+            if not ok:
                 raise Exception(f"Powerflow failed at snapshot {snapshot}")
+            self._timing_data["solve_powerflow_times"].append(pf_end - pf_start)
+
+            snap_start = time.perf_counter()
+            self.take_snapshot(timestamp=snapshot)
+            snap_end = time.perf_counter()
+            self._timing_data["take_snapshot_times"].append(snap_end - snap_start)
+
+            step_end = time.perf_counter()
+            self._timing_data["iteration_times"].append(step_end - step_start)
+
+        self._timing_data["simulation_total"] = time.perf_counter() - t0
+        return True    
+
+    # def simulate(self, load_curve=None) -> bool:
+    #     """Simulate the PyPSA grid over time with WEC farm updates.
+        
+    #     Simulates the PyPSA grid over a series of time snapshots, updating WEC farm 
+    #     generator outputs and optionally bus loads at each time step. For each snapshot,
+    #     the method updates generator power outputs, applies load changes if provided,
+    #     solves the power flow, and captures the grid state.
+        
+    #     Args:
+    #         load_curve (Optional[pd.DataFrame]): DataFrame containing load values for 
+    #             each bus at each snapshot. Index should be snapshots, columns should 
+    #             be bus IDs. If None, loads remain constant.
+
+    #     Returns:
+    #         bool: True if the simulation completes successfully.
             
-            # log itr i end
-            iter_end = time.time()
-            self._timing_data['iteration_times'].append(iter_end - iter_start)
+    #     Raises:
+    #         Exception: If there is an error setting generator power, setting load data, 
+    #             or solving the power flow at any snapshot.
+
+    #     Notes:
+    #         The simulation process includes:
             
-        # log simulation end
-        sim_end = time.time()
-        self._timing_data['simulation_total'] = sim_end - sim_start
-        return True
+    #         WEC Generator Updates:
+    #         - Updates WEC generator power setpoints [MW]
+    #         - Converts from per-unit to MW using farm base power
+    #         - Uses farm power curve data for each time snapshot
+            
+    #         Load Updates (if load_curve provided):
+    #         - Updates bus load values [MW] 
+    #         - Converts from per-unit to MW using system base
+    #         - Maps bus numbers to PyPSA load component names
+            
+    #         Power Flow Solution:
+    #         - Solves power flow at each time step
+    #         - Captures grid state snapshots for analysis
+    #     """
+    #     # map: bus number (str) -> load name (index)
+    #     bus_to_load = self.network.loads['bus'].astype(str).to_dict()
+    #     inv_map = {v: k for k, v in bus_to_load.items()}  # bus->load
+    #     # (if you prefer your original naming)
+    #     bus_to_load = {str(bus): name for name, bus in self.network.loads['bus'].items()}
+
+    #     # Initialize timing storage
+    #     if not hasattr(self, '_timing_data'):
+    #         self._timing_data = {
+    #             'simulation_total': 0.0,
+    #             'iteration_times': [],
+    #             'solve_powerflow_times': [],
+    #             'take_snapshot_times': []
+    #         }
+        
+    #     # log simulation start 
+    #     sim_start = time.time()
+    #     #for snapshot in self.engine.time.snapshots:
+    #     for snapshot in tqdm(self.engine.time.snapshots, desc="PyPSA Simulating", unit="step"):
+    #         # log itr i start 
+    #         iter_start = time.time()
+            
+    #         # WEC generators
+    #         for farm in self.engine.wec_farms:
+    #             power = farm.power_at_snapshot(snapshot) * self.sbase  # pu -> MW 
+    #             # write to the DataFrame, not the Series view
+    #             self.network.generators.at[f"W{farm.farm_id}", "p_set"] = power
+
+    #         # Loads
+    #         if load_curve is not None:
+    #             for bus in load_curve.columns:
+    #                 load_id = bus_to_load.get(str(bus)) # PU 
+    #                 if load_id is None:
+    #                     continue  # or raise if this should never happen
+    #                 mw = float(load_curve.loc[snapshot, bus]) * self.sbase
+    #                 self.network.loads.at[load_id, "p_set"] = mw
+            
+    #         # log solve pf time start
+    #         pf_start = time.time()
+    #         if self.solve_powerflow():
+    #             # log solve pf time end
+    #             pf_end = time.time()
+    #             self._timing_data['solve_powerflow_times'].append(pf_end - pf_start)
+                
+    #             # log take snapshot time start
+    #             snap_start = time.time()
+    #             self.take_snapshot(timestamp=snapshot)
+    #             # log take snapshot time end
+    #             snap_end = time.time()
+    #             self._timing_data['take_snapshot_times'].append(snap_end - snap_start)
+    #         else:
+    #             raise Exception(f"Powerflow failed at snapshot {snapshot}")
+            
+    #         # log itr i end
+    #         iter_end = time.time()
+    #         self._timing_data['iteration_times'].append(iter_end - iter_start)
+            
+    #     # log simulation end
+    #     sim_end = time.time()
+    #     self._timing_data['simulation_total'] = sim_end - sim_start
+    #     return True
     
     
     def get_timing_data(self) -> Dict[str, Any]:
