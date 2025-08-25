@@ -1,0 +1,10 @@
+{
+  "total_time_diff": -128.77865287926937,
+  "total_time_pct": -76.82617973949064,
+  "powerflow_diff": -422.5589345691257,
+  "powerflow_pct": -99.10924757665568,
+  "snapshot_diff": -24.06100889149681,
+  "snapshot_pct": -15.656992767564546,
+  "iteration_diff": -446.62772922451074,
+  "iteration_pct": -76.99943035307714
+}
