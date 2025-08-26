@@ -118,10 +118,10 @@ slprj/
 *.log 
 
 # WEC-Sim runtime generated files
-data/wec_models/RM3/output/*
-data/wec_models/RM3/temp/*
-data/wec_models/LUPA/output/*
-data/wec_models/LUPA/temp/*
+examples/wec_models/RM3/output/*
+examples/wec_models/RM3/temp/*
+examples/wec_models/LUPA/output/*
+examples/wec_models/LUPA/temp/*
 
 # Matlab autosave files
 *.asv
