@@ -55,8 +55,7 @@ class WECSimRunner:
         self.wec_sim_path: Optional[str] = None
         self.database: WECGridDB = database
         self.matlab_engine = None
-        self._load_config()
-    
+
     def _load_config(self) -> None:
         """Load WEC-Sim configuration from JSON file."""
         try:
@@ -118,7 +117,14 @@ class WECSimRunner:
             bool: ``True`` if the MATLAB engine was started, ``False`` if the
             engine was already running or the MATLAB Python API is unavailable.
         """
-        
+        self._load_config()
+        if self.wec_sim_path is None:
+            print("\n" + "="*60)
+            print("WEC-Sim Path not set")
+            print("="*60)
+            print("Please set the WEC-Sim path here or using the wecsim.set_wec_sim_path() method.")
+            path = input("Enter the WEC-Sim path: ")
+            self.set_wec_sim_path(path)
         try:
             import matlab.engine
         except ImportError:

@@ -137,11 +137,6 @@ class GridState:
             │   ├─ gen:   5 components  
             │   ├─ line:  20 components
             │   └─ load:  11 components
-            ├─ Time-series Data:
-            │   ├─ bus:   v_mag, angle_deg, p, q (120 snapshots)
-            │   ├─ gen:   p, q, status (120 snapshots)
-            │   ├─ line:  line_pct, status (120 snapshots)
-            │   └─ load:  p, q, status (120 snapshots)
             └─ Backend: PSS®E simulation model
         """
         def ts_info(component_t):
@@ -172,13 +167,8 @@ class GridState:
             f"│   ├─ gen:   {len(self.gen)} components\n"
             f"│   ├─ line:  {len(self.line)} components\n"
             f"│   └─ load:  {len(self.load)} components\n"
-            f"├─ Time-series Data:\n"
-            f"│   ├─ bus:   {ts_info(self.bus_t)}\n"
-            f"│   ├─ gen:   {ts_info(self.gen_t)}\n"
-            f"│   ├─ line:  {ts_info(self.line_t)}\n"
-            f"│   └─ load:  {ts_info(self.load_t)}\n"
             f"├─ Case: {self.case}\n"
-            f"└─ Backend: {backend_name(self.software)}"
+            f"└─ Modeler: {self.software}"
         )
 
     def update(self, component: str, timestamp: pd.Timestamp, df: pd.DataFrame):
@@ -396,6 +386,7 @@ class PowerSystemModeler(ABC):
         self.engine = engine
         self.grid = GridState()
         self.grid.case = engine.case_name
+        
         self.sbase: Optional[float] = None
         
     def __repr__(self) -> str:

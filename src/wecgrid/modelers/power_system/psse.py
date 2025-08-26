@@ -81,6 +81,7 @@ class PSSEModeler(PowerSystemModeler):
         """
         super().__init__(engine)
         self.grid.software = "psse"
+        self.grid.case = engine.case_name
 
     # def __repr__(self) -> str:
     #     """String representation of PSS®E model with grid summary.
@@ -271,6 +272,7 @@ class PSSEModeler(PowerSystemModeler):
                 print(f"[WARN] Failed to update Q limits at bus {bus_num}.")
         self.grid = GridState()  # TODO Reset state after adding farm but should be a bette way
         self.grid.software = "psse"
+        self.grid.case = self.engine.case_name
         self.solve_powerflow()
         self.take_snapshot(timestamp=self.engine.time.start_time)
         return True
@@ -348,8 +350,8 @@ class PSSEModeler(PowerSystemModeler):
 
         # Step 4: Add a branch (line) connecting the existing bus to the new bus
         realar_array = [0.0] * 12
-        realar_array[0] = 0.0452  # R
-        realar_array[1] = 0.1652  # X
+        realar_array[0] = 0.01 # R
+        realar_array[1] = 0.05  # X
         ratings_array = [0.0] * 12
         ratings_array[0] = 130.00  # RATEA
         ierr = self.psspy.branch_data_3(

@@ -1,4 +1,4 @@
-# API Reference
+<!-- # API Reference
 
 This section provides detailed API documentation for all WEC-Grid classes and functions, auto-generated from the source code docstrings.
 
@@ -41,4 +41,4 @@ This section provides detailed API documentation for all WEC-Grid classes and fu
 ### WEC-Sim Runner
 ![mkapi](wecgrid.modelers.wec_sim.runner.WECSimRunner)
 
-
+ -->

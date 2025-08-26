@@ -38,7 +38,7 @@ The framework employs a modular bridge pattern with:
 
 - **[Installation](install.md)** - Setup instructions and dependencies
 - **[Quick Start](quickstart.md)** - Your first WEC-Grid simulation
-- **[Examples](examples/basic-example.md)** - Complete workflow demonstrations
+<!-- - **[Examples](examples/basic-example.md)** - Complete workflow demonstrations -->
 
 ## Support
 

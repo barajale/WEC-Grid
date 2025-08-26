@@ -58,7 +58,7 @@ class Engine:
         - need a way to map GridState componet names to modeler component names
     """
 
-    def __init__(self):
+    def __init__(self, database_path: Optional[str] = None):
         """Initialize the WEC-Grid Engine with default configuration.
 
         Creates engine instance ready for case loading and simulation setup.
@@ -70,20 +70,36 @@ class Engine:
         self.psse: Optional[PSSEModeler] = None
         self.pypsa: Optional[PyPSAModeler] = None
         self.wec_farms: List[WECFarm] = []
-        self.database = WECGridDB(self)
+        self.database = WECGridDB(self, database_path)
         self.plot = WECGridPlot(self)
         self.wecsim: WECSimRunner = WECSimRunner(self.database)
         self.sbase: Optional[float] = None
 
-    #         print(r"""
+    print(r"""
 
-    #  __     __     ______     ______     ______     ______     __     _____
-    # /\ \  _ \ \   /\  ___\   /\  ___\   /\  ___\   /\  == \   /\ \   /\  __-.
-    # \ \ \/ ".\ \  \ \  __\   \ \ \____  \ \ \__ \  \ \  __<   \ \ \  \ \ \/\ \
-    #  \ \__/".~\_\  \ \_____\  \ \_____\  \ \_____\  \ \_\ \_\  \ \_\  \ \____-
-    #   \/_/   \/_/   \/_____/   \/_____/   \/_____/   \/_/ /_/   \/_/   \/____/
-    #             """)
+     __     __     ______     ______     ______     ______     __     _____
+    /\ \  _ \ \   /\  ___\   /\  ___\   /\  ___\   /\  == \   /\ \   /\  __-.
+    \ \ \/ ".\ \  \ \  __\   \ \ \____  \ \ \__ \  \ \  __<   \ \ \  \ \ \/\ \
+     \ \__/".~\_\  \ \_____\  \ \_____\  \ \_____\  \ \_\ \_\  \ \_\  \ \____-
+      \/_/   \/_/   \/_____/   \/_____/   \/_____/   \/_/ /_/   \/_/   \/____/
+                """)
 
+    def __repr__(self) -> str:
+        """String representation of Engine.
+        
+        Returns:
+            str: Tree-style summary
+        """
+        return (
+            f"Engine:\n"
+            f"├─ Case: {self.case_name}\n"
+            f"├─ PyPSA: {'Loaded' if self.pypsa else 'Not Loaded'}\n"
+            f"├─ PSS/E: {'Loaded' if self.psse else 'Not Loaded'}\n"
+            f"├─ WEC-Farms/WECs: {len(self.wec_farms)} - {len(self.wec_farms) and sum(len(farm.wec_devices) for farm in self.wec_farms) or 0}\n"
+            f"└─ Buses: {len(self.pypsa.bus) if self.pypsa else len(self.psse.bus) if self.psse else 0}\n"
+            f"\n"
+            f"Sbase: {self.sbase if self.sbase else 'Not Loaded'} MVA"
+        )
     def case(self, case_file: str):
         """Specify the power system case file for subsequent loading.
 
@@ -212,6 +228,7 @@ class Engine:
                     if (modeler.grid.gen.bus == wec_farm.bus_location).any()
                     else None
                 )
+        print("WEC Farm added:", wec_farm.farm_name)
 
     def generate_load_curves(
         self,
@@ -219,8 +236,8 @@ class Engine:
         evening_peak_hour: float = 18.0,
         morning_sigma_h: float = 2.0,
         evening_sigma_h: float = 3.0,
-        amplitude: float = 0.30,  # ±30% swing around mean
-        min_multiplier: float = 0.70,  # floor/ceiling clamp
+        amplitude: float = 0.05,  # ±30% swing around mean
+        min_multiplier: float = 0.50,  # floor/ceiling clamp
         amp_overrides: Optional[Dict[int, float]] = None,
     ) -> pd.DataFrame:
         """Generate realistic time-varying load profiles for power system simulation.

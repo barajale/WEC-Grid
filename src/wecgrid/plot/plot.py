@@ -9,6 +9,7 @@ results, supporting cross-platform comparison between PSS®E and PyPSA modeling 
 from typing import Any, List, Optional, Tuple, Union
 
 # Third-party
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -687,7 +688,30 @@ class WECGridPlot:
                 print(f"  Available columns: {list(data.columns)[:10]}...")  # Show first 10 columns
                 continue
             
-            df_to_plot = data[available_components]
+            df_to_plot = data[available_components].copy()
+            
+            # Convert index to time-of-day format (ignore dates, keep time)
+            if hasattr(df_to_plot.index, 'time'):
+                # Extract time-of-day and create a new index with step numbers
+                time_of_day = df_to_plot.index.time
+                # Convert to datetime with common base date and time info
+                import datetime
+                base_date = datetime.date(2000, 1, 1)  # Common base date
+                new_index = [datetime.datetime.combine(base_date, t) for t in time_of_day]
+                df_to_plot.index = pd.DatetimeIndex(new_index)
+            elif hasattr(df_to_plot.index, 'hour'):
+                # If already datetime, normalize to same base date
+                import datetime
+                base_date = datetime.date(2000, 1, 1)
+                new_index = []
+                for dt in df_to_plot.index:
+                    time_part = dt.time()
+                    new_dt = datetime.datetime.combine(base_date, time_part)
+                    new_index.append(new_dt)
+                df_to_plot.index = pd.DatetimeIndex(new_index)
+            else:
+                # If index is not datetime, use step numbers
+                df_to_plot.index = range(len(df_to_plot))
             
             # Create meaningful column names for the legend
             renamed_cols = []
@@ -720,7 +744,27 @@ class WECGridPlot:
 
         ax.set_title(f"Comparison for {grid_component.capitalize()} {name}: {parameter.capitalize()}")
         ax.set_ylabel(parameter)
-        ax.set_xlabel("Time")
+        ax.set_xlabel("Time of Day")
         ax.grid(True)
         ax.legend()
+        
+        # Format x-axis for better time display if datetime index
+        try:
+            if hasattr(ax.get_lines()[0].get_xdata(), '__iter__'):
+                # Check if we have datetime data
+                first_data = None
+                for line in ax.get_lines():
+                    if len(line.get_xdata()) > 0:
+                        first_data = line.get_xdata()[0]
+                        break
+                
+                if first_data is not None and hasattr(first_data, 'hour'):
+                    # Format x-axis to show time nicely
+                    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+                    ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
+                    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
+        except:
+            pass  # Fall back to default formatting if anything goes wrong
+        
+        plt.tight_layout()
         plt.show()
