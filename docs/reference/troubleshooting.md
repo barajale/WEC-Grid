@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Common issues and quick fixes when working with WEC-Grid.
+<!-- Common issues and quick fixes when working with WEC-Grid.
 
 ## PSS®E Not Found
 - Ensure PSS®E is installed and licensed.
@@ -16,4 +16,4 @@ Common issues and quick fixes when working with WEC-Grid.
 
 If problems persist, please open an issue on the [project repository](https://github.com/acep-uaf/WEC-Grid).
 
-
+ -->

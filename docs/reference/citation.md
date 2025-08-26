@@ -10,7 +10,7 @@ If you use WEC-Grid in your research, please cite:
   author  = {Alexander Barajas-Ritchie},
   year    = {2024},
   url     = {https://github.com/acep-uaf/WEC-Grid},
-  institution = {Alaska Center for Energy and Power, University of Alaska Fairbanks}
+  institution = {Oregon State University}
 }
 ```
 
@@ -24,20 +24,20 @@ Currently in development. Please cite the software directly.
 
 ## Third-Party Acknowledgments
 
-WEC-Grid builds upon several open-source projects:
+<!-- WEC-Grid builds upon several open-source projects:
 
 - **WEC-Sim** – Wave Energy Converter Simulator
 - **PyPSA** – Python for Power System Analysis
 - **PSS®E** – Power System Simulator for Engineering
 - **Pandas** – Data analysis and manipulation library
 - **NumPy** – Numerical computing library
-- **Matplotlib** – Plotting library
-
+- **Matplotlib** – Plotting library -->
+<!-- 
 ## Contact
 
 For questions about WEC-Grid or collaboration opportunities:
 
 - **Primary Contact**: barajale@oregonstate.edu
 - **Institution**: Alaska Center for Energy and Power
-- **GitHub**: https://github.com/acep-uaf/WEC-GRID
+- **GitHub**: https://github.com/acep-uaf/WEC-GRID -->
 

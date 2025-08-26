@@ -40,30 +40,29 @@ plugins:
 nav:
   - Getting Started:
       - Introduction: index.md
-      - Software Design: software-design.md
+      - Software Design: design.md
       - Installation: install.md
-      - Quick Start: quickstart.md
-  - User Guide:
-      - WECGrid Components:
-          - Engine: user-guide/components/engine.md
-          - Database: user-guide/components/database.md
-          - Time: user-guide/components/time-manager.md
-          - Power System Modelers: user-guide/components/modelers.md
-          - PSS/E: user-guide/components/psse.md
-          - PyPSA: user-guide/components/pypsa.md
-          - WEC-Sim Runner: user-guide/components/wecsim.md
-          - WEC Components: user-guide/components/wec.md
-          - Plot: user-guide/components/plotting.md
-      - Models:
-          - Grid Models: user-guide/models/grid-models.md
-          - WEC Models: user-guide/models/wec-models.md
+  - WECGrid:
+    - Engine: wecgrid/engine.md
+    - Power System Modelers: wecgrid/base.md
+    - PSS/E: wecgrid/psse.md
+    - PyPSA: wecgrid/pypsa.md
+    - WEC-Sim Runner: wecgrid/wecsim.md
+    - WEC Components: wecgrid/wec.md
+    - Database: wecgrid/database.md
+    - Time: wecgrid/time.md
+    - Plot: wecgrid/plot.md
   - Examples & Data:
-      # - Basic Example: examples/basic-example.md
-      - Example 1: examples/example1.ipynb
-      - Example 2: examples/example2.ipynb
-      - Example 3: examples/example3.ipynb
-      - Example 4 : examples/example4.ipynb
-      #- WEC-Sim: examples/wec-sim.ipynb
+    - Jupyter notebooks:
+      - Example 1: examples/jupyter_notebooks/example1.ipynb
+      - Example 2: examples/jupyter_notebooks/example2.ipynb
+      - Example 3: examples/jupyter_notebooks/example3.ipynb
+      - Example 4 : examples/jupyter_notebooks/example4.ipynb
+    - Data:
+      - Grid Models: examples/data/grid-models.md
+      - WEC Models: examples/data/wec-models.md
+      - Database: examples/data/database.md
+      # WECGrid.db lives here
   - Reference:
       - API Reference: reference/api.md
       - Troubleshooting: reference/troubleshooting.md

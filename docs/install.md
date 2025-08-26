@@ -1,18 +1,18 @@
 # Installation
 
 ## System Requirements
-- **Python**: 3.7
-- **Operating System**: Windows recommended for full functionality (PSS®E is Windows-only). Core features with PyPSA run on Linux and macOS.
+- **Python**: 3.7 + 
+- **Operating System**: Windows recommended for full functionality (PSS®E is Windows-only). Core features compatiable with most platforms.
 
 ### Power System Software
 - **PSS®E**: Version 34 or later (commercial license required)
-- **PyPSA**: Installed automatically with WEC-Grid
+- **PyPSA**: PyPSA link here
 
 ### WEC Modeling Software
-- **MATLAB**: R2021b
+- **MATLAB**: R2021b + 
 - **WEC-Sim**: Install separately ([WEC-Sim Installation Guide](https://wec-sim.github.io/WEC-Sim/main/user/getting_started.html))
 
-## WEC-Grid Installation
+<!-- ## WEC-Grid Installation
 
 ```bash
 # Clone the repository
@@ -68,4 +68,4 @@ print("WEC-Grid installed successfully!")
 ## Next Steps
 
 Once installed, head to the [Quick Start Guide](quickstart.md) for your first simulation.
-
+ -->

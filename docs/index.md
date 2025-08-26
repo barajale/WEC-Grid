@@ -16,7 +16,7 @@ WEC-Grid bridges this gap by providing a unified modeling approach that accurate
 - **Data Management**: SQLite database with standardized result formats for reproducible research
 - **Visualization**: Time-series plots, cross-platform comparisons, and network diagrams
 
-## Research Applications
+<!-- ## Research Applications
 
 WEC-Grid enables researchers to:
 
@@ -38,7 +38,7 @@ The framework employs a modular bridge pattern with:
 
 - **[Installation](install.md)** - Setup instructions and dependencies
 - **[Quick Start](quickstart.md)** - Your first WEC-Grid simulation
-<!-- - **[Examples](examples/basic-example.md)** - Complete workflow demonstrations -->
+- **[Examples](examples/basic-example.md)** - Complete workflow demonstrations -->
 
 ## Support
 
@@ -50,9 +50,9 @@ The framework employs a modular bridge pattern with:
 
 This work is supported by the U.S. Department of Energy Office of Energy Efficiency and Renewable Energy, Water Power Technology Office (Grant #DE-EE0009445), University of Alaska Fairbanks, and Pacific Northwest National Laboratory.
 
-
+<!-- 
 ## Future Work
 
 - Fault Analysis
 - PowerFactory API
-- Dynamic Simulation
+- Dynamic Simulation -->
